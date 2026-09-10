@@ -1,7 +1,7 @@
 # Define clean-room compatibility fixtures
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 
 ## Question

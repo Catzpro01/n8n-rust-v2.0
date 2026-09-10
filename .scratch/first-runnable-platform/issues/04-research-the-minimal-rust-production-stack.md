@@ -1,7 +1,7 @@
 # Research the minimal Rust production stack
 
 Type: research
-Status: open
+Status: claimed
 Blocked by: none
 
 ## Question
