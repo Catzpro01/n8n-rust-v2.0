@@ -63,3 +63,27 @@ _Avoid_: Import warnings
 **Remediation Patch**:
 A reversible proposed change that includes evidence, confidence, expected effects, and a rollback path.
 _Avoid_: Auto-fix when approval is still required
+
+**Node Form**:
+One of the eight user-facing ways to define or obtain a Node Definition: JavaScript Script, Python Script, WASM Component, Rust Native, External Process, AI-Generated Node, Sub-workflow Node, or MCP Tool Node.
+_Avoid_: Security tier, runtime tier
+
+**Execution Lane**:
+The resource and isolation class selected for an Activation independently of how its Node Definition was authored.
+_Avoid_: Runtime language, node tier
+
+**Inline Native Lane**:
+The lowest-overhead Execution Lane for trusted built-in behavior that requires no external runtime.
+_Avoid_: Simple mode
+
+**WASM Micro Lane**:
+A short-lived capability-limited Execution Lane for portable custom computation.
+_Avoid_: Embedded plugin
+
+**Isolated Runtime Lane**:
+An on-demand Execution Lane for language runtimes and arbitrary processes that must not share the daemon's trust domain.
+_Avoid_: Compatibility mode
+
+**Heavy Orchestrator Lane**:
+A separately budgeted Execution Lane for browsers, scrapers, local models, and other resource-intensive systems.
+_Avoid_: Heavy node

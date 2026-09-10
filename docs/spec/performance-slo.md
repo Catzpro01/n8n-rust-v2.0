@@ -10,7 +10,7 @@ The Rust daemon—engine, API, scheduler, and embedded SQLite, excluding the use
 - peak resident set size: at most 500 MiB;
 - no loss of durable Run state after a forced process restart.
 
-This is a repeatable baseline, not a claim that arbitrary payloads, browser engines, LLMs, or external processes can fit within 500 MiB.
+This is a repeatable baseline for the always-resident Rust daemon and Inline Native Lane. Optional WASM, Node.js, CPython, browser, LLM, scraper, agent, or external-process workers have separate declared budgets and are not a loophole: the UI and Run record must display their measured peak usage. It is not a claim that arbitrary payloads or external tools can fit within 500 MiB.
 
 ## Required evidence
 
