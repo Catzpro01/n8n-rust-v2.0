@@ -163,3 +163,19 @@ _Avoid_: Smart HTTP Request
 **Connector Definition**:
 A versioned collection of Node Definitions and credential contracts generated from or maintained against an external system interface.
 _Avoid_: Integration package
+
+**Crawl Plan**:
+The approved scope, frontier rules, budgets, compliance policy, extraction contract, and adapter policy for one scraping Run.
+_Avoid_: Scrape job, crawler config
+
+**URL Frontier**:
+The durable, deduplicated set of discovered request candidates and their crawl relationships within a Crawl Plan.
+_Avoid_: URL queue
+
+**Scrape Adapter**:
+A local or remote implementation capable of fetching, rendering, crawling, or extracting web content under a Crawl Plan.
+_Avoid_: Scraper when referring to the selectable implementation
+
+**Scrape Result Bundle**:
+The typed result for one fetched resource, combining selected Artifacts, normalized content, extracted records, links, provenance, and confidence.
+_Avoid_: Scraped page
