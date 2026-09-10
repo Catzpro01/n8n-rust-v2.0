@@ -25,7 +25,7 @@ A directed route from an output port of one Node Instance to an input port of an
 _Avoid_: Edge, wire
 
 **Run**:
-One durable execution of exactly one Workflow Revision.
+One durable execution of exactly one Workflow Revision through exactly one pinned Execution Plan.
 _Avoid_: Execution, job
 
 **Run Admission**:
@@ -65,7 +65,7 @@ A Workflow invoked to counteract completed side effects after a Run can no longe
 _Avoid_: Rollback workflow
 
 **Execution Plan**:
-The validated, immutable scheduling representation compiled from one Workflow Revision.
+The validated, immutable scheduling representation compiled from one Workflow Revision and pinned unchanged for the life of each Run.
 _Avoid_: Compiled workflow, runtime graph
 
 **Compatibility Report**:
@@ -191,6 +191,10 @@ _Avoid_: Durable progress
 **Uncertain Outcome**:
 The recorded state of a side-effecting Activation when an external system may have acted but success or failure cannot be proven safely.
 _Avoid_: Failure when the external effect may have succeeded
+
+**Cancellation Request**:
+A durable intent to stop admitting new Activations and cooperatively stop in-flight work without claiming to reverse completed or uncertain external effects.
+_Avoid_: Kill when work may have escaped the process
 
 **Retention Profile**:
 The policy that selects full, compacted, expired, or pinned Causal Trace and Artifact evidence under a storage budget.
