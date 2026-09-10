@@ -191,3 +191,7 @@ _Avoid_: Marketplace server
 **Trust Evidence**:
 Verifiable facts about a Workflow Package's identity, provenance, dependencies, tests, capabilities, maintenance, and sandbox results.
 _Avoid_: Trust score when referring to the underlying facts
+
+**Rust Promotion Track**:
+The measured migration path by which a remote or isolated adapter gains a behavior-compatible Native Node implementation and becomes the preferred execution path.
+_Avoid_: Rewrite when only the orchestration adapter changes language
