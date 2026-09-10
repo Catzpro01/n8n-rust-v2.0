@@ -120,6 +120,18 @@ _Avoid_: Execution Lane, runtime language
 A typed Activation result such as Success, Retryable Failure, Permanent Failure, Durable Suspension, Uncertain Outcome, or Cancelled.
 _Avoid_: Free-form error, process exit code
 
+**Effect Class**:
+The Node Contract classification of externally visible behavior as Pure, External Read, External Write, or Orchestration, together with its retry and reconciliation facts.
+_Avoid_: HTTP method, permission level
+
+**Activation Context**:
+The capability-limited host surface through which a Node Implementation reads input, emits output, streams Artifacts, observes cancellation/deadline, and uses granted time, randomness, tracing, or Secret Leases.
+_Avoid_: Engine handle, application context
+
+**Compatibility Mapping**:
+An explicit fixture-backed translation between an external node identity/configuration and a locked Node Contract or delegated compatibility implementation.
+_Avoid_: Alias when behavior has not been proven
+
 **Configuration Schema**:
 The declarative parameters, validation rules, defaults, and editor hints for configuring a Node Instance without executing node-supplied UI code.
 _Avoid_: Custom settings component
