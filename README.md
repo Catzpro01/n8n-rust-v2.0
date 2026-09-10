@@ -15,6 +15,6 @@ make test
 python3 -m unittest tests/acceptance/test_release_bundle.py
 ```
 
-For native installation, resource limits, HTTPS configuration, and state-preserving uninstall, see [`docs/operations/install-systemd.md`](docs/operations/install-systemd.md).
+For Owner bootstrap and recovery-key handling, see [`docs/operations/owner-bootstrap.md`](docs/operations/owner-bootstrap.md). For native installation, resource limits, HTTPS configuration, and state-preserving uninstall, see [`docs/operations/install-systemd.md`](docs/operations/install-systemd.md).
 
 The mandatory clean-room policy is in [`docs/legal/clean-room-policy.md`](docs/legal/clean-room-policy.md). Do not copy n8n source, tests, Enterprise files, UI assets, icons, product copy, or distinctive trade dress.

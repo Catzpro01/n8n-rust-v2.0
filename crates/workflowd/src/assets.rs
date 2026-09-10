@@ -17,7 +17,10 @@ include!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
 
 pub async fn serve(uri: Uri) -> Response {
     let requested = uri.path();
-    if requested.starts_with("/api/") || requested.starts_with("/health/") {
+    if requested.starts_with("/api/")
+        || requested.starts_with("/health/")
+        || requested.starts_with("/public/")
+    {
         return not_found();
     }
     let path = if requested == "/" {

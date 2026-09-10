@@ -13,7 +13,7 @@ cleanup() {
 }
 trap cleanup EXIT
 cleanup
-sudo rm -rf /var/lib/workflow-rust /run/workflow-rust
+sudo rm -rf /var/lib/workflow-rust /run/workflow-rust /etc/workflowd /etc/workflowd
 sudo ./scripts/install.sh --bundle "$bundle" --bind "127.0.0.1:$port"
 
 for _ in {1..100}; do
@@ -26,12 +26,22 @@ curl -fsS "$origin/" | grep -q 'Canopy Workbench'
 curl -fsS "$origin/api/v1/release" | jq -e \
   '.product == "Canopy Workbench" and .api_version == "v1"' >/dev/null
 
+setup=$(curl -fsS --request POST "$origin/api/v1/setup" \
+  --header "Origin: $origin" --header 'Content-Type: application/json' \
+  --data '{"email":"owner@systemd.test","password":"systemd smoke password 2026","recovery_passphrase":"separate systemd recovery phrase 2026"}')
+kit_document=$(jq -r '.recovery_kit.document' <<<"$setup")
+kit_checksum=$(jq -r '.recovery_kit.checksum' <<<"$setup")
+[[ $(printf '%s' "$kit_document" | sha256sum | cut -d' ' -f1) == "$kit_checksum" ]]
+curl -fsS "$origin/health/ready" | jq -e \
+  '.recovery.state == "recovery-kit-unacknowledged"' >/dev/null
+
 [[ $(systemctl show workflowd.service -p User --value) == workflowd ]]
 [[ $(systemctl show workflowd.service -p Group --value) == workflowd ]]
 [[ $(systemctl show workflowd.service -p MemoryMax --value) == 524288000 ]]
 [[ $(systemctl show workflowd.service -p MemorySwapMax --value) == 0 ]]
 [[ $(systemctl show workflowd.service -p TasksMax --value) == 64 ]]
 [[ $(systemctl show workflowd.service -p CPUQuotaPerSecUSec --value) == 500ms ]]
+[[ $(sudo stat -c '%U:%G:%a:%s' /etc/workflowd/master.key) == root:root:600:32 ]]
 systemd-analyze verify workflowd.service
 exposure=$(systemd-analyze security --no-pager workflowd.service \
   | awk '/Overall exposure level/ {print $(NF-2)}')
@@ -69,6 +79,7 @@ sudo ./scripts/uninstall.sh >/dev/null
 [[ ! -e /etc/systemd/system/workflowd.service ]]
 sudo test -f /var/lib/workflow-rust/workflow.sqlite3
 sudo test -f /var/lib/workflow-rust/install-smoke-marker
+sudo test -f /etc/workflowd/master.key
 trap - EXIT
 printf 'systemd-smoke=passed state-preserved=/var/lib/workflow-rust/workflow.sqlite3 rss_bytes=%s idle_cpu_cores=%s hardening_exposure=%s\n' \
   "$rss_bytes" "$idle_cpu_cores" "$exposure"

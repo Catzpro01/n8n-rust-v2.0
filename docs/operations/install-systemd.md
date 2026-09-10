@@ -42,7 +42,7 @@ sudo systemctl restart workflowd.service
 sudo ./scripts/uninstall.sh
 ```
 
-Uninstall removes executable/configuration/service files but deliberately preserves `/var/lib/workflow-rust`. Back up or explicitly remove that directory only when the Owner intends to destroy state.
+Uninstall removes executable, ordinary configuration, and service files but deliberately preserves `/var/lib/workflow-rust` and the root-owned `/etc/workflowd/master.key`. Back up or explicitly remove that directory only when the Owner intends to destroy state.
 
 The destructive clean-install smoke test is intended only for an expendable test host because it removes any existing `/var/lib/workflow-rust` before installation:
 

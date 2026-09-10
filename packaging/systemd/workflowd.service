@@ -10,6 +10,8 @@ Type=simple
 User=workflowd
 Group=workflowd
 EnvironmentFile=-/etc/workflowd/workflowd.env
+LoadCredential=master-key:/etc/workflowd/master.key
+Environment=WORKFLOWD_MASTER_KEY_FILE=%d/master-key
 ExecStart=/usr/bin/workflowd serve
 Restart=on-failure
 RestartSec=2s

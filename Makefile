@@ -14,7 +14,7 @@ check: editor
 
 test: editor
 	cargo test --workspace --locked
-	python3 -m unittest tests/acceptance/test_daemon_shell.py
+	python3 -m unittest tests/acceptance/test_daemon_shell.py tests/acceptance/test_owner_recovery.py
 
 release-test: release
 	python3 -m unittest tests/acceptance/test_release_bundle.py

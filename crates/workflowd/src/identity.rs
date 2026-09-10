@@ -20,7 +20,7 @@ pub struct ReleaseIdentity {
 #[derive(Debug, Clone, Serialize)]
 pub struct CapabilityIdentity {
     pub api_version: &'static str,
-    pub capabilities: [&'static str; 4],
+    pub capabilities: [&'static str; 6],
     pub runtime: RuntimeIdentity,
 }
 
@@ -54,6 +54,8 @@ impl CapabilityIdentity {
                 "durable-sqlite",
                 "resource-identity",
                 "direct-tls",
+                "single-owner",
+                "encrypted-recovery-root",
             ],
             runtime: RuntimeIdentity {
                 tokio_core_workers: TOKIO_CORE_WORKERS,

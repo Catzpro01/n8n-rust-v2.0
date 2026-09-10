@@ -7,6 +7,8 @@ mod config;
 mod database;
 mod error;
 mod identity;
+mod owner_http;
+mod security;
 
 use crate::app::AppState;
 use crate::config::{ServeConfig, BLOCKING_THREADS_MAX, TOKIO_CORE_WORKERS};
@@ -23,7 +25,10 @@ use tracing_subscriber::FmtSubscriber;
 
 fn main() {
     if let Err(error) = dispatch() {
-        eprintln!("workflowd: {error}");
+        eprintln!(
+            "{}",
+            serde_json::json!({"event":"startup_failed","error":error.to_string()})
+        );
         std::process::exit(1);
     }
 }
@@ -56,11 +61,13 @@ fn serve() -> Result<(), AppError> {
 
     let (database_worker, database_identity) =
         DatabaseWorker::start(&config.state_dir, config.sqlite_min_version)?;
+    let security = security::SecurityService::initialize(&config.state_dir, &config)?;
     let state = AppState {
         _database_worker: Arc::new(database_worker),
         release: ReleaseIdentity::new(database_identity.runtime_version.clone()),
         database: database_identity,
         resources: cgroup::discover(config.cgroup_dir.as_deref()),
+        security: Arc::new(security),
     };
 
     let runtime = Builder::new_multi_thread()

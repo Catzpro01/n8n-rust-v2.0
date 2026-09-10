@@ -4,7 +4,7 @@
 
 **Blocked by:** 01: Boot the production-shaped daemon and editor shell
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] First-run setup creates exactly one Owner only through the private control surface and becomes unavailable after successful initialization.
 - [ ] Owner passwords use calibrated Argon2id PHC storage; login, session renewal, logout, expiration, and password-hash upgrade are externally tested.
