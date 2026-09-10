@@ -87,3 +87,19 @@ _Avoid_: Compatibility mode
 **Heavy Orchestrator Lane**:
 A separately budgeted Execution Lane for browsers, scrapers, local models, and other resource-intensive systems.
 _Avoid_: Heavy node
+
+**Node Contract**:
+The reviewable declaration of a Node Definition's inputs, outputs, configuration, capabilities, side effects, determinism, idempotency, and resource budget.
+_Avoid_: Plugin manifest, node schema
+
+**Capability Grant**:
+An explicit, least-privilege authorization for one Node Instance to use a named host facility or credential scope during an Activation.
+_Avoid_: Permission when referring to runtime authority
+
+**Secret Lease**:
+A short-lived, scoped delivery of selected credential fields to one authorized Activation.
+_Avoid_: Mounted secret, environment secret
+
+**Promotion**:
+The reviewed transition of a proven custom Native Node from an isolated worker into the trusted built-in set.
+_Avoid_: Installation, enabling
