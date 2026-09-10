@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] A locked Rust workspace and build-only TypeScript/Preact editor pipeline produce one stripped daemon with embedded content-hashed editor assets.
 - [ ] An installed daemon serves the editor shell, versioned capability/release identity, liveness, and readiness through externally tested HTTPS/HTTP surfaces.

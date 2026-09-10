@@ -1,5 +1,20 @@
-# Workflow Rust Project
+# Canopy Workbench
 
-Design-stage repository for an independently implemented, self-hosted workflow automation platform with a Rust execution core and documented n8n compatibility.
+Canopy Workbench is an independently implemented, self-hosted workflow automation platform with a Rust execution core and documented compatibility seams. The name and geometric editor mark are placeholders for the first runnable.
 
-No product implementation is started until the `/grill-with-docs` design frontier is empty and the owner confirms shared understanding.
+The current production slice provides one Rust daemon with embedded TypeScript/Preact editor assets, durable bundled SQLite startup, versioned health/release/resource APIs, direct HTTP or HTTPS, and a hardened native systemd package. Workflow authoring and execution arrive through the dependency-ordered tickets under `.scratch/eco-100k-first-runnable/`.
+
+## Builder quick start
+
+The build is pinned to Rust 1.85.1 and Node.js 22.19.0.
+
+```bash
+make editor
+make test
+./scripts/build-release.sh
+python3 -m unittest tests/acceptance/test_release_bundle.py
+```
+
+For native installation, resource limits, HTTPS configuration, and state-preserving uninstall, see [`docs/operations/install-systemd.md`](docs/operations/install-systemd.md).
+
+The mandatory clean-room policy is in [`docs/legal/clean-room-policy.md`](docs/legal/clean-room-policy.md). Do not copy n8n source, tests, Enterprise files, UI assets, icons, product copy, or distinctive trade dress.

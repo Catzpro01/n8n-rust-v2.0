@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+[Unit]
+Description=Canopy Workbench workflow daemon
+Documentation=https://github.com/Catzpro01/n8n-rust-v2.0
+After=local-fs.target network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=workflowd
+Group=workflowd
+EnvironmentFile=-/etc/workflowd/workflowd.env
+ExecStart=/usr/bin/workflowd serve
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=10s
+KillSignal=SIGTERM
+OOMPolicy=stop
+
+StateDirectory=workflow-rust
+StateDirectoryMode=0700
+RuntimeDirectory=workflow-rust
+RuntimeDirectoryMode=0700
+WorkingDirectory=/var/lib/workflow-rust
+UMask=0077
+
+CPUAccounting=yes
+CPUQuota=50%
+MemoryAccounting=yes
+MemoryMax=500M
+MemorySwapMax=0
+TasksAccounting=yes
+TasksMax=64
+LimitNOFILE=4096
+
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
