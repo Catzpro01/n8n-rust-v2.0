@@ -236,6 +236,18 @@ _Avoid_: Source checkout, development environment
 One immutable installed Production Bundle eligible to become current or to serve as the previous rollback target.
 _Avoid_: Mutable installation directory
 
+**Release Manifest**:
+The signed checksummed statement of a Production Bundle's identity, provenance, compatibility ranges, migrations, security metadata, and required Recovery Reserve.
+_Avoid_: Download checksum without publisher authentication
+
+**Release Trust Root**:
+The owner-approved key material from which authority to sign Release Manifests and rotate release keys is derived.
+_Avoid_: TLS certificate, package-registry popularity
+
+**Quarantine Mode**:
+A non-executing diagnostic state that preserves suspect production data and blocks writes, triggers, and side effects until recovery is explicitly approved.
+_Avoid_: Automatic restore, read-write safe mode
+
 **Recovery Set**:
 A consistent verified snapshot manifest covering SQLite state, Artifact roots, encrypted vault metadata, configuration identity, and required release/plan versions.
 _Avoid_: Database copy when other state is missing
