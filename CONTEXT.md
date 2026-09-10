@@ -9,7 +9,7 @@ A user-authored graph of Node Instances and Connections that expresses an automa
 _Avoid_: Flow, pipeline, automation graph
 
 **Workflow Revision**:
-An immutable snapshot of a Workflow used as the sole definition for a Run.
+An immutable snapshot of a Workflow used as the sole definition for a Run; it includes authored structural layout but excludes transient Editor Session navigation state.
 _Avoid_: Workflow version, saved workflow
 
 **Node Definition**:
@@ -139,6 +139,14 @@ _Avoid_: System prompt, guardrail prompt
 **Mutable Draft**:
 The editable, autosaved working form of a Workflow that cannot be used for a production Run.
 _Avoid_: Development workflow
+
+**Draft Version**:
+The monotonic identity of a Mutable Draft state after an accepted Draft Command; unlike a Workflow Revision, it is not publishable or immutable.
+_Avoid_: Draft Revision, autosave Revision
+
+**Draft Command**:
+A durable, ordered intent to change a Mutable Draft, accepted only against its declared base Draft Version.
+_Avoid_: Patch, frontend event
 
 **Editor Session**:
 One connected browser context that can observe a Mutable Draft and may hold its Draft Lease.
