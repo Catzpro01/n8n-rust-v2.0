@@ -3,6 +3,8 @@ use crate::{
     assets,
     cgroup::ResourceIdentity,
     database::{DatabaseIdentity, DatabaseWorker},
+    draft::DraftService,
+    draft_http,
     identity::{CapabilityIdentity, ReleaseIdentity, API_VERSION},
     owner_http,
     security::{RecoveryHealth, SecurityService},
@@ -21,6 +23,7 @@ pub struct AppState {
     pub resources: ResourceIdentity,
     pub release: ReleaseIdentity,
     pub security: Arc<SecurityService>,
+    pub drafts: Arc<DraftService>,
 }
 #[derive(Serialize)]
 struct LiveResponse {
@@ -55,6 +58,21 @@ pub fn router(state: AppState) -> Router {
             post(owner_http::acknowledge),
         )
         .route("/api/v1/audit", get(owner_http::audit))
+        .route("/api/v1/catalog", get(draft_http::catalog))
+        .route(
+            "/api/v1/node-contracts/{namespace}/{name}/{version}",
+            get(draft_http::contract),
+        )
+        .route("/api/v1/workflows", post(draft_http::create))
+        .route("/api/v1/workflows/{id}", get(draft_http::load))
+        .route(
+            "/api/v1/workflows/{id}/draft-commands",
+            post(draft_http::command),
+        )
+        .route(
+            "/api/v1/workflows/{id}/editor-session",
+            post(draft_http::editor_session),
+        )
         .route("/public/v1/health/live", get(liveness))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .fallback(assets::serve)

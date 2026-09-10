@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 [workspace]
-members = ["crates/workflowd"]
+members = ["crates/node-contract", "crates/workflowd"]
 resolver = "2"
 
 [workspace.package]

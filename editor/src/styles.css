@@ -24,7 +24,7 @@ h1 { margin-bottom: 0; font-size: 1.15rem; letter-spacing: .01em; }
 .welcome > p:not(.eyebrow) { max-width: 570px; color: #b7cdc6; font-size: 1.08rem; line-height: 1.65; }
 button { margin-top: 18px; padding: 12px 18px; color: #071611; background: #74f2bd; border: 0; border-radius: 4px; font-weight: 800; }
 button:disabled { cursor: not-allowed; opacity: .55; }
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: #36564d; border: 1px solid #36564d; }
+.cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #36564d; border: 1px solid #36564d; }
 .cards article { min-height: 180px; padding: 22px; background: #0d211b; }
 .number { color: #74f2bd; font: 700 .72rem ui-monospace, monospace; }
 .cards h3 { margin: 34px 0 7px; color: #9db8b0; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; }
@@ -40,3 +40,9 @@ footer { padding-top: 30px; color: #6f8e85; font-size: .72rem; }
   .cards { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+
+.owner-login { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1fr) auto; gap: .75rem; align-items: end; margin-top: 1.25rem; }
+.owner-login label { display: grid; gap: .35rem; color: var(--muted); font-size: .78rem; }
+.owner-login input { border: 1px solid var(--line); background: #10130f; color: var(--ink); border-radius: .3rem; padding: .72rem; }
+.action { color: var(--mint); min-height: 1.5rem; }
+@media (max-width: 720px) { .owner-login { grid-template-columns: 1fr; } }

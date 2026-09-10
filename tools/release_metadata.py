@@ -117,6 +117,8 @@ def main() -> None:
             "sbom": "usr/share/doc/workflowd/sbom.cdx.json",
             "licenses": "usr/share/doc/workflowd/third-party-licenses.json",
             "dependencyChecksums": "usr/share/doc/workflowd/dependency-lock-checksums.json",
+            "nodeContractSdk": "usr/share/workflowd/sdk/node-contract",
+            "nativeContracts": "usr/share/workflowd/contracts",
         },
     }
     write_json(release_dir / "release-manifest.json", release_manifest)

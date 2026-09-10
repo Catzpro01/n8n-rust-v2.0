@@ -51,6 +51,29 @@ const html = `<!doctype html>
 </html>
 `;
 await writeFile(join(outputDirectory, "index.html"), html);
+const manualContract = JSON.parse(
+  await readFile(join(editorRoot, "../contracts/manual-trigger.v1alpha1.json"), "utf8"),
+);
+const contractBytes = JSON.stringify(canonical(manualContract));
+await writeFile(
+  join(outputDirectory, "catalog.v1.json"),
+  JSON.stringify({
+    schema: 1,
+    nodes: [{
+      display_name: manualContract.extensions["canopy.workbench/display"].display_name,
+      description: manualContract.extensions["canopy.workbench/display"].description,
+      contract_lock: {
+        api_version: manualContract.identity.api_version,
+        namespace: manualContract.identity.namespace,
+        name: manualContract.identity.name,
+        version: manualContract.identity.version,
+        digest: `sha256:${createHash("sha256").update(contractBytes).digest("hex")}`,
+      },
+      configuration_schema: manualContract.configuration.schema,
+      editor_hints: manualContract.configuration.editor_hints,
+    }],
+  }),
+);
 
 const files = await listFiles(outputDirectory);
 const manifest = {
@@ -81,4 +104,12 @@ async function listFiles(directory) {
     else if (entry.isFile()) paths.push(path);
   }
   return paths.sort();
+}
+
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value !== null && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  }
+  return value;
 }

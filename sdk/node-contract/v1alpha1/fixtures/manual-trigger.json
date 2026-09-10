@@ -1,0 +1,21 @@
+{
+  "contract": "../../../../contracts/manual-trigger.v1alpha1.json",
+  "expected_canonical_sha256": "ad8329bcb04057543978730bf3636041b382e7a32ad7b85f98377464d5417b7d",
+  "expected_lock": {
+    "api_version": "v1alpha1",
+    "digest": "sha256:ad8329bcb04057543978730bf3636041b382e7a32ad7b85f98377464d5417b7d",
+    "name": "manual-trigger",
+    "namespace": "canopy.native",
+    "version": "0.1.0"
+  },
+  "input": {
+    "captured_invocation": {
+      "manual": true
+    }
+  },
+  "name": "manual-trigger-canonical-source",
+  "output": {
+    "count": 1,
+    "port": "invocation"
+  }
+}

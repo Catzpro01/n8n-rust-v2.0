@@ -4,7 +4,7 @@
 
 **Blocked by:** 02: Establish the Owner and recovery root
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] An Apache-2.0 `v1alpha1` Node Contract meta-schema, canonical JSON/digest rules, conformance fixture format, and Rust SDK surface are published.
 - [ ] The Manual Trigger contract declares identity, Configuration Schema, ports, Source Activation Shape, Pure effect, no capabilities, Resource Budget, typed outcomes, and compatibility metadata.

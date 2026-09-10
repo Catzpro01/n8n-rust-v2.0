@@ -1,0 +1,362 @@
+{
+  "$id": "https://canopy.invalid/node-contract/v1alpha1/meta-schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "activation": {
+      "additionalProperties": false,
+      "properties": {
+        "bounded_batch": {},
+        "ordering": {
+          "type": "string"
+        },
+        "shape": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bounded_batch",
+        "ordering",
+        "shape"
+      ],
+      "type": "object"
+    },
+    "capabilities": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "compatibility": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "type": "array"
+        },
+        "profile": {
+          "type": "string"
+        },
+        "safe_opaque_fields": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "aliases",
+        "profile",
+        "safe_opaque_fields"
+      ],
+      "type": "object"
+    },
+    "configuration": {
+      "additionalProperties": false,
+      "properties": {
+        "defaults": {
+          "type": "object"
+        },
+        "editor_hints": {
+          "type": "object"
+        },
+        "schema": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "defaults",
+        "editor_hints",
+        "schema"
+      ],
+      "type": "object"
+    },
+    "effects": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_required": {
+          "type": "boolean"
+        },
+        "class": {
+          "type": "string"
+        },
+        "deterministic": {
+          "type": "boolean"
+        },
+        "idempotent": {
+          "type": "boolean"
+        },
+        "reconciliation": {
+          "type": "string"
+        },
+        "retry": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approval_required",
+        "class",
+        "deterministic",
+        "idempotent",
+        "reconciliation",
+        "retry"
+      ],
+      "type": "object"
+    },
+    "extensions": {
+      "additionalProperties": false,
+      "patternProperties": {
+        "^[A-Za-z0-9.-]+[/:][A-Za-z0-9._/-]+$": {}
+      },
+      "type": "object"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "api_version": {
+          "type": "string"
+        },
+        "license": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "publisher": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_version",
+        "license",
+        "name",
+        "namespace",
+        "publisher",
+        "version"
+      ],
+      "type": "object"
+    },
+    "outcomes": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "error_namespace": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed",
+        "error_namespace"
+      ],
+      "type": "object"
+    },
+    "ports": {
+      "additionalProperties": false,
+      "properties": {
+        "inputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cardinality": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "multiplicity": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "schema": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "cardinality",
+              "id",
+              "multiplicity",
+              "required",
+              "schema"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "outputs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cardinality": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "multiplicity": {
+                "type": "string"
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "schema": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "cardinality",
+              "id",
+              "multiplicity",
+              "required",
+              "schema"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "inputs",
+        "outputs"
+      ],
+      "type": "object"
+    },
+    "resources": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "additionalProperties": false,
+          "properties": {
+            "artifact_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "concurrency": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cpu_millis": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "input_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "input_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "memory_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "output_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "output_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "wall_millis": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "artifact_bytes",
+            "concurrency",
+            "cpu_millis",
+            "input_bytes",
+            "input_count",
+            "memory_bytes",
+            "output_bytes",
+            "output_count",
+            "wall_millis"
+          ],
+          "type": "object"
+        },
+        "hard": {
+          "additionalProperties": false,
+          "properties": {
+            "artifact_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "concurrency": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "cpu_millis": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "input_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "input_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "memory_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "output_bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "output_count": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "wall_millis": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "artifact_bytes",
+            "concurrency",
+            "cpu_millis",
+            "input_bytes",
+            "input_count",
+            "memory_bytes",
+            "output_bytes",
+            "output_count",
+            "wall_millis"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "default",
+        "hard"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "identity",
+    "configuration",
+    "ports",
+    "activation",
+    "effects",
+    "capabilities",
+    "resources",
+    "outcomes",
+    "compatibility"
+  ],
+  "title": "Canopy Node Contract v1alpha1",
+  "type": "object"
+}

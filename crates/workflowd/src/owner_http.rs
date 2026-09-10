@@ -142,7 +142,10 @@ fn session_response(status: StatusCode, g: SessionGrant) -> Response {
     );
     r
 }
-fn mutation_credentials(s: &AppState, headers: &HeaderMap) -> Result<(String, String), ApiError> {
+pub(crate) fn mutation_credentials(
+    s: &AppState,
+    headers: &HeaderMap,
+) -> Result<(String, String), ApiError> {
     origin(s, headers)?;
     let token = cookie(headers).ok_or(ApiError::Unauthorized)?;
     let csrf = headers
@@ -165,7 +168,7 @@ fn now() -> i64 {
         .unwrap_or_default()
         .as_secs() as i64
 }
-fn cookie(h: &HeaderMap) -> Option<String> {
+pub(crate) fn cookie(h: &HeaderMap) -> Option<String> {
     h.get(COOKIE)?
         .to_str()
         .ok()?
@@ -177,7 +180,7 @@ fn cookie(h: &HeaderMap) -> Option<String> {
 fn result<T>(r: Result<Result<T, SecurityError>, tokio::task::JoinError>) -> Result<T, ApiError> {
     r.map_err(|_| ApiError::Internal)?.map_err(Into::into)
 }
-enum ApiError {
+pub(crate) enum ApiError {
     SetupClosed,
     Input,
     Credentials,

@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 build = "build.rs"
 [dependencies]
+canopy-node-contract = { path = "../node-contract" }
 argon2.workspace = true
 axum.workspace = true
 axum-server.workspace = true
