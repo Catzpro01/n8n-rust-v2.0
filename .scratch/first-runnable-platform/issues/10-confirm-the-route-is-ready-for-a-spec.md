@@ -1,7 +1,7 @@
 # Confirm the route is ready for a spec
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 06, 07, 08, 09
 
 ## Question
