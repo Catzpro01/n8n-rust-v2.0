@@ -25,6 +25,8 @@ Reach a clear, implementation-ready route to a first runnable clean-room release
 - [Define the first runnable vertical slice](issues/01-define-the-first-runnable-slice.md): Eco 100K proves an independent six-node editor-to-durable-Run journey, crash recovery, trace inspection, rollback, and separate 100,000-Activation and 100,000-Node-Instance fixtures.
 - [Prototype the Eco execution kernel](issues/02-prototype-the-eco-execution-kernel.md): the constrained Rust/SQLite kernel is feasible; FULL commit cadence dominates, and bounded group checkpoints recover deterministically after an ungraceful abort.
 - [Prototype the virtualized independent editor](issues/03-prototype-the-virtualized-editor.md): use group-first macro navigation, a viewport-culled Canvas 2D detail renderer, command search/jump, semantic zoom, packed graph state, and sparse UI overlays.
+- [Research the minimal Rust production stack](issues/04-research-the-minimal-rust-production-stack.md): use a feature-gated Tokio/Axum/Rusqlite/rustls stack, dedicated SQLite writer, direct cgroup parsing, embedded assets, and a hardened one-daemon systemd bundle.
+- [Define clean-room compatibility fixtures](issues/05-define-clean-room-compatibility-fixtures.md): pin a private 2.39.0 black-box oracle and use sanitized owner-authored exports, public docs, deterministic observations, provenance, and evidence-backed import classifications.
 
 ## Not yet specified
 
