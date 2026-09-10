@@ -151,3 +151,15 @@ _Avoid_: Execution log
 **Durable Suspension**:
 A persisted Run state that consumes no active execution slot while awaiting time, callback, event, or approval.
 _Avoid_: Sleeping task, waiting thread
+
+**HTTP Adapter**:
+A selectable implementation of an outbound request path, such as native HTTP, a compatibility client, a proxy provider, or browser-backed fetch.
+_Avoid_: HTTP engine, scraper when no extraction is involved
+
+**HTTP Orchestrator**:
+A policy-governed Node Definition that selects and may safely fall back among HTTP Adapters while preserving request identity, idempotency, cost, and audit evidence.
+_Avoid_: Smart HTTP Request
+
+**Connector Definition**:
+A versioned collection of Node Definitions and credential contracts generated from or maintained against an external system interface.
+_Avoid_: Integration package
