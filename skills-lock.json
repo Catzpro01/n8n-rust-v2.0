@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "supabase-server": {
+      "source": "supabase/server",
+      "sourceType": "github",
+      "skillPath": "skills/supabase-server/SKILL.md",
+      "computedHash": "139113c1e1838d156a0c9562e57abb85011c1eeb1cd7b449fd4e84a65c0020ab"
+    }
+  }
+}
