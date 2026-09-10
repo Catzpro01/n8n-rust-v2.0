@@ -4,6 +4,8 @@
 
 Reach a clear, implementation-ready route to a first runnable clean-room release: one Rust-only production daemon that serves an independent editor, saves and publishes a small workflow, executes it durably, and proves the 100,000-lightweight-Activation Eco benchmark under 500 MiB RAM, 0.5 CPU, and a 10 GiB managed footprint. The output is ready to collapse through `/to-spec`, then `/to-tickets`.
 
+**Route status: ready for `/to-spec` (all 10 tickets resolved).**
+
 ## Notes
 
 - Existing decisions live in `CONTEXT.md` and `docs/adr/`; do not reopen them silently.
@@ -31,6 +33,7 @@ Reach a clear, implementation-ready route to a first runnable clean-room release
 - [Choose the engine and storage interfaces](issues/07-choose-the-engine-and-storage-interfaces.md): separate a pure compiler and deterministic Run state machine from the governed scheduler, aggregate SQLite checkpoint writer, streamed encrypted Artifact store, and bounded external use-case seams.
 - [Choose the first Node Contract](issues/08-choose-the-first-node-contract.md): publish an Apache-2.0 behavior-first contract and narrow Activation Context, prove it with six deterministic Native Nodes, then expand through a version-pinned Catalog Conformance Matrix for built-ins and installed/curated community packages.
 - [Choose the production bundle and recovery path](issues/09-choose-the-production-bundle-and-recovery-path.md): ship a signed systemd-first one-binary bundle with optional identical OCI form, Current/Previous release slots, protected Recovery Reserve, complete local/off-site Recovery Sets, offline Recovery Kit, restore drills, Quarantine Mode, and opt-in Safe Auto accelerators.
+- [Confirm the route is ready for a spec](issues/10-confirm-the-route-is-ready-for-a-spec.md): one coherent browser/API/process/cgroup acceptance seam covers editor-to-publish-to-100K durable Run, crash recovery, trace/digest/rollback, and the separate 100K-node virtualization fixture; native node names retain visible exact n8n compatibility aliases.
 
 ## Intentionally deferred to specification
 

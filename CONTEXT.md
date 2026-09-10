@@ -132,6 +132,10 @@ _Avoid_: Engine handle, application context
 An explicit fixture-backed translation between an external node identity/configuration and a locked Node Contract or delegated compatibility implementation.
 _Avoid_: Alias when behavior has not been proven
 
+**Compatibility Alias**:
+A visible preserved external node name/type and version attached to a fixture-backed Compatibility Mapping without replacing the native Node Definition identity or implying endorsement.
+_Avoid_: Native node identity, official node
+
 **Node Implementation**:
 A separately versioned executable binding that claims one Node Contract and must pass its conformance fixtures in an eligible Execution Lane.
 _Avoid_: Node Contract, Node Form
