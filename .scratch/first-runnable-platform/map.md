@@ -24,10 +24,10 @@ Reach a clear, implementation-ready route to a first runnable clean-room release
 
 - [Define the first runnable vertical slice](issues/01-define-the-first-runnable-slice.md): Eco 100K proves an independent six-node editor-to-durable-Run journey, crash recovery, trace inspection, rollback, and separate 100,000-Activation and 100,000-Node-Instance fixtures.
 - [Prototype the Eco execution kernel](issues/02-prototype-the-eco-execution-kernel.md): the constrained Rust/SQLite kernel is feasible; FULL commit cadence dominates, and bounded group checkpoints recover deterministically after an ungraceful abort.
+- [Prototype the virtualized independent editor](issues/03-prototype-the-virtualized-editor.md): use group-first macro navigation, a viewport-culled Canvas 2D detail renderer, command search/jump, semantic zoom, packed graph state, and sparse UI overlays.
 
 ## Not yet specified
 
-- Exact technology and interaction architecture for an independent high-scale browser editor.
 - Exact Rust module interfaces and storage transaction boundaries for the first vertical slice.
 - Exact Node Contract and SDK surface for the first native nodes.
 - Reproducible production bundle, updater, and rollback details under the 10 GiB profile.
