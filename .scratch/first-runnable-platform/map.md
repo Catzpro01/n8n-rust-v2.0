@@ -27,6 +27,7 @@ Reach a clear, implementation-ready route to a first runnable clean-room release
 - [Prototype the virtualized independent editor](issues/03-prototype-the-virtualized-editor.md): use group-first macro navigation, a viewport-culled Canvas 2D detail renderer, command search/jump, semantic zoom, packed graph state, and sparse UI overlays.
 - [Research the minimal Rust production stack](issues/04-research-the-minimal-rust-production-stack.md): use a feature-gated Tokio/Axum/Rusqlite/rustls stack, dedicated SQLite writer, direct cgroup parsing, embedded assets, and a hardened one-daemon systemd bundle.
 - [Define clean-room compatibility fixtures](issues/05-define-clean-room-compatibility-fixtures.md): pin a private 2.39.0 black-box oracle and use sanitized owner-authored exports, public docs, deterministic observations, provenance, and evidence-backed import classifications.
+- [Choose the independent editor interface](issues/06-choose-the-editor-interface.md): use connected TypeScript/Preact, imperative virtualized Canvas 2D, durable versioned Draft Commands, a single graceful-takeover Draft Lease, compact topology plus lazy detail, accessible bounded DOM surfaces, and versioned JSON/SSE/binary Rust contracts.
 
 ## Not yet specified
 
@@ -36,6 +37,6 @@ Reach a clear, implementation-ready route to a first runnable clean-room release
 
 ## Out of scope
 
-- Full n8n node-catalog parity, AI Agent, Scrape Orchestrator, and Workflow Hub implementation: these remain product goals but receive later maps after the runnable foundation exists.
+- Full n8n node-catalog parity, AI Agent, Scrape Orchestrator, Workflow Hub, and Skill Hub implementation: these remain product goals, including Play-Store-like in-product search/review/install/update, but receive later maps after the runnable foundation exists.
 - Rewriting Chromium, Firefox, hosted scraping providers, or third-party agent products: Rust protocol adapters and remote execution are the boundary.
 - Public launch or commercial distribution: requires specialist legal review and a later release map.

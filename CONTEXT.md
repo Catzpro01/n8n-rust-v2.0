@@ -204,8 +204,20 @@ _Avoid_: Scraped page
 A declarative, versioned distribution containing workflow definitions, requirements, evidence, and provenance but no secret values or implicitly executable installer.
 _Avoid_: Template when the distribution includes more than a workflow graph
 
+**Skill Package**:
+A versioned distribution of a Skill Set with source lock, scope, capability requirements, tests, license, evidence, and provenance.
+_Avoid_: Prompt download, unpinned skill folder
+
+**Workflow Hub**:
+The built-in discovery, review, installation, and update experience for Workflow Packages indexed from Hub Sources.
+_Avoid_: Unreviewed template gallery
+
+**Skill Hub**:
+The built-in discovery, review, installation, and update experience for Skill Packages indexed from Hub Sources.
+_Avoid_: Automatic prompt installer
+
 **Hub Source**:
-A configured catalog or repository origin whose Workflow Package metadata is indexed locally.
+A configured catalog or repository origin whose Workflow Package and Skill Package metadata is indexed locally.
 _Avoid_: Marketplace server
 
 **Trust Evidence**:
