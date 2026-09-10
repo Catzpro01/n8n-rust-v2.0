@@ -132,6 +132,22 @@ _Avoid_: Engine handle, application context
 An explicit fixture-backed translation between an external node identity/configuration and a locked Node Contract or delegated compatibility implementation.
 _Avoid_: Alias when behavior has not been proven
 
+**Node Implementation**:
+A separately versioned executable binding that claims one Node Contract and must pass its conformance fixtures in an eligible Execution Lane.
+_Avoid_: Node Contract, Node Form
+
+**Community Node Package**:
+A user-supplied or owner-curated separately installed distribution of external Node Implementations governed by its own license and trust evidence.
+_Avoid_: Built-in dependency, automatically trusted plugin
+
+**Catalog Conformance Matrix**:
+The Compatibility-Profile and package-version-pinned evidence inventory for node import, configuration, execution, permissions, failures, and compatibility status.
+_Avoid_: Supported nodes list without fixture evidence
+
+**Certified Compatible**:
+A status granted only to an exact external node or package version and digest after its required conformance evidence passes.
+_Avoid_: Compatible by package name or popularity
+
 **Configuration Schema**:
 The declarative parameters, validation rules, defaults, and editor hints for configuring a Node Instance without executing node-supplied UI code.
 _Avoid_: Custom settings component
