@@ -1,7 +1,7 @@
 # Prototype the virtualized independent editor
 
 Type: prototype
-Status: open
+Status: claimed
 Blocked by: 01
 
 ## Question
