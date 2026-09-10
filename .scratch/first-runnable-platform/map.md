@@ -22,6 +22,8 @@ Reach a clear, implementation-ready route to a first runnable clean-room release
 - [Compiled structured graph](../../docs/adr/0007-compile-immutable-revisions-into-structured-plans.md): compile immutable revisions and constrain cycles through explicit constructs.
 - [Streaming data](../../docs/adr/0008-stream-envelopes-and-spill-artifacts.md): bounded Envelopes and content-addressed Artifacts replace unbounded materialization.
 
+- [Define the first runnable vertical slice](issues/01-define-the-first-runnable-slice.md): Eco 100K proves an independent six-node editor-to-durable-Run journey, crash recovery, trace inspection, rollback, and separate 100,000-Activation and 100,000-Node-Instance fixtures.
+
 ## Not yet specified
 
 - Exact technology and interaction architecture for an independent high-scale browser editor.
@@ -29,7 +31,6 @@ Reach a clear, implementation-ready route to a first runnable clean-room release
 - Measured feasibility and bottlenecks of the 100,000-Activation Eco benchmark.
 - Exact Node Contract and SDK surface for the first native nodes.
 - Reproducible production bundle, updater, and rollback details under the 10 GiB profile.
-- The first complete feature slice and its external test seams.
 
 ## Out of scope
 
