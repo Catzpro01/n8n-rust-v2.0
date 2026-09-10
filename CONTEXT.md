@@ -51,3 +51,15 @@ _Avoid_: Legacy node, JavaScript node
 **Compensation Workflow**:
 A Workflow invoked to counteract completed side effects after a Run can no longer proceed safely.
 _Avoid_: Rollback workflow
+
+**Execution Plan**:
+The validated, immutable scheduling representation compiled from one Workflow Revision.
+_Avoid_: Compiled workflow, runtime graph
+
+**Compatibility Report**:
+A pre-activation account of which imported behavior is supported, adapted, blocked, or delegated to Compatibility Nodes.
+_Avoid_: Import warnings
+
+**Remediation Patch**:
+A reversible proposed change that includes evidence, confidence, expected effects, and a rollback path.
+_Avoid_: Auto-fix when approval is still required
