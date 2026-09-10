@@ -10,12 +10,12 @@ Blocked by: none
 
 ## Frontier
 
-- Ticket 01 is resolved. Ticket 02 is the current frontier because its only blocker is complete. A later ticket becomes frontier when every ticket listed in its `Blocked by` field is complete.
+- Tickets 01 and 02 are resolved. Ticket 03 is the current frontier because its only blocker is complete. A later ticket becomes frontier when every ticket listed in its `Blocked by` field is complete.
 
 ## Tickets
 
 1. [Boot the production-shaped daemon and editor shell](issues/01-boot-the-production-shaped-daemon-and-editor-shell.md) — **resolved**; implementation and verification evidence are recorded in the ticket.
-2. [Establish the Owner and recovery root](issues/02-establish-the-owner-and-recovery-root.md) — blocked by 01: Boot the production-shaped daemon and editor shell.
+2. [Establish the Owner and recovery root](issues/02-establish-the-owner-and-recovery-root.md) — **resolved**; implementation and verification evidence are recorded in the ticket.
 3. [Create the first Node Contract and durable Draft](issues/03-create-the-first-node-contract-and-durable-draft.md) — blocked by 02: Establish the Owner and recovery root.
 4. [Recover and arbitrate Draft editing](issues/04-recover-and-arbitrate-draft-editing.md) — blocked by 03: Create the first Node Contract and durable Draft.
 5. [Publish and roll back a Manual Trigger revision](issues/05-publish-and-roll-back-a-manual-trigger-revision.md) — blocked by 04: Recover and arbitrate Draft editing.
