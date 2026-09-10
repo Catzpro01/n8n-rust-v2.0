@@ -112,6 +112,18 @@ _Avoid_: Version range, latest node
 The declared shape and cardinality accepted or emitted by a named Node Contract port, including an explicit dynamic-item form when static typing is not possible.
 _Avoid_: Rust type, UI field type
 
+**Activation Shape**:
+The Node Contract declaration of whether work originates data, processes one Envelope, consumes a bounded batch, or waits at a barrier/reducer.
+_Avoid_: Execution Lane, runtime language
+
+**Node Outcome**:
+A typed Activation result such as Success, Retryable Failure, Permanent Failure, Durable Suspension, Uncertain Outcome, or Cancelled.
+_Avoid_: Free-form error, process exit code
+
+**Configuration Schema**:
+The declarative parameters, validation rules, defaults, and editor hints for configuring a Node Instance without executing node-supplied UI code.
+_Avoid_: Custom settings component
+
 **Resource Budget**:
 The declared default and hard bounds for an Activation's time, CPU, memory, output, Artifact, and concurrency consumption.
 _Avoid_: Resource request when referring to enforced limits
