@@ -103,3 +103,11 @@ _Avoid_: Mounted secret, environment secret
 **Promotion**:
 The reviewed transition of a proven custom Native Node from an isolated worker into the trusted built-in set.
 _Avoid_: Installation, enabling
+
+**Public Gateway**:
+The internet-facing ingress that exposes only explicitly published webhook, form, OAuth callback, MCP, and health routes.
+_Avoid_: Public server, public UI
+
+**Compatibility Profile**:
+A versioned statement of supported behavior against one frozen n8n release, backed by compatibility tests and migration rules.
+_Avoid_: n8n version, compatibility mode
