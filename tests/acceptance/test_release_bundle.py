@@ -39,7 +39,7 @@ class ReleaseBundleAcceptanceTest(unittest.TestCase):
             "usr/share/workflowd/contracts/manual-trigger.v1alpha1.json", relative
         )
 
-        forbidden_suffixes = (".rs", ".tsx", ".ts", ".map", ".pyc")
+        forbidden_suffixes = (".rs", ".tsx", ".ts", ".mjs", ".map", ".pyc")
         self.assertFalse([name for name in relative if name.endswith(forbidden_suffixes)])
         forbidden_parts = {
             "node_modules",
@@ -88,6 +88,13 @@ class ReleaseBundleAcceptanceTest(unittest.TestCase):
         self.assertFalse(
             [component for component in sbom["components"] if not component["licenses"]]
         )
+        playwright = [
+            component
+            for component in sbom["components"]
+            if component["name"] in {"playwright", "playwright-core"}
+        ]
+        self.assertEqual(len(playwright), 2)
+        self.assertTrue(all(component["scope"] == "excluded" for component in playwright))
 
         dynamic = subprocess.check_output(
             ["ldd", str(BUNDLE / "usr/bin/workflowd")], text=True

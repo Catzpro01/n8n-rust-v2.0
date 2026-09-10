@@ -64,7 +64,7 @@ fn serve() -> Result<(), AppError> {
     let (database_worker, database_identity) =
         DatabaseWorker::start(&config.state_dir, config.sqlite_min_version)?;
     let security = security::SecurityService::initialize(&config.state_dir, &config)?;
-    let drafts = draft::DraftService::initialize(&config.state_dir)
+    let drafts = draft::DraftService::initialize(&config)
         .map_err(|error| AppError::Database(format!("draft schema: {error}")))?;
     let state = AppState {
         _database_worker: Arc::new(database_worker),

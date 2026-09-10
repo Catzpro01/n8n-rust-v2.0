@@ -20,7 +20,7 @@ pub struct ReleaseIdentity {
 #[derive(Debug, Clone, Serialize)]
 pub struct CapabilityIdentity {
     pub api_version: &'static str,
-    pub capabilities: [&'static str; 8],
+    pub capabilities: [&'static str; 11],
     pub runtime: RuntimeIdentity,
 }
 
@@ -58,6 +58,9 @@ impl CapabilityIdentity {
                 "encrypted-recovery-root",
                 "node-contract-v1alpha1",
                 "semantic-draft-commands",
+                "single-writer-draft-lease",
+                "durable-undo-redo",
+                "encrypted-browser-recovery-copy",
             ],
             runtime: RuntimeIdentity {
                 tokio_core_workers: TOKIO_CORE_WORKERS,

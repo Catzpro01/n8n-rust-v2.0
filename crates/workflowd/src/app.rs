@@ -73,6 +73,51 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/workflows/{id}/editor-session",
             post(draft_http::editor_session),
         )
+        .route(
+            "/api/v1/workflows/{id}/editing/open",
+            post(draft_http::open_editing),
+        )
+        .route(
+            "/api/v1/workflows/{id}/editing/acquire",
+            post(draft_http::acquire),
+        )
+        .route(
+            "/api/v1/workflows/{id}/editing/status",
+            get(draft_http::editing_status),
+        )
+        .route(
+            "/api/v1/workflows/{id}/editing/heartbeat",
+            post(draft_http::heartbeat),
+        )
+        .route(
+            "/api/v1/workflows/{id}/editing/release",
+            post(draft_http::release),
+        )
+        .route(
+            "/api/v1/workflows/{id}/editing/takeover/request",
+            post(draft_http::request_takeover),
+        )
+        .route(
+            "/api/v1/workflows/{id}/editing/takeover/respond",
+            post(draft_http::respond_takeover),
+        )
+        .route(
+            "/api/v1/workflows/{id}/editing/takeover/claim",
+            post(draft_http::claim_takeover),
+        )
+        .route("/api/v1/workflows/{id}/history", get(draft_http::history))
+        .route(
+            "/api/v1/workflows/{id}/recovery/reconcile",
+            post(draft_http::reconcile),
+        )
+        .route(
+            "/api/v1/workflows/{id}/recovery-forks",
+            get(draft_http::list_forks),
+        )
+        .route(
+            "/api/v1/workflows/{id}/recovery-forks/{fork_id}/apply",
+            post(draft_http::apply_fork),
+        )
         .route("/public/v1/health/live", get(liveness))
         .layer(DefaultBodyLimit::max(16 * 1024))
         .fallback(assets::serve)

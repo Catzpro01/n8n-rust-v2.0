@@ -178,7 +178,12 @@ def npm_dependencies() -> tuple[list[dict], list[dict]]:
         version = package["version"]
         purl = f"pkg:npm/{quote(name, safe='@/')}@{quote(version)}"
         license_expression = package.get("license") or ""
-        scope = "optional" if package.get("optional") else "required"
+        if package.get("dev"):
+            scope = "excluded"
+        elif package.get("optional"):
+            scope = "optional"
+        else:
+            scope = "required"
         component = {
             "type": "library",
             "bom-ref": purl,

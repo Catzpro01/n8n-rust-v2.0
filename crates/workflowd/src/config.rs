@@ -17,6 +17,11 @@ pub struct ServeConfig {
     pub login_max_failures: i64,
     pub argon_memory_kib: u32,
     pub argon_iterations: u32,
+    pub draft_lease_ttl_seconds: i64,
+    pub draft_takeover_grace_seconds: i64,
+    pub draft_snapshot_interval: u64,
+    pub draft_history_limit: usize,
+    pub draft_undo_limit: usize,
 }
 #[derive(Debug, Clone)]
 pub struct TlsConfig {
@@ -55,13 +60,28 @@ impl ServeConfig {
         let login_max_failures = number("WORKFLOWD_LOGIN_MAX_FAILURES", 3)?;
         let argon_memory_kib = number("WORKFLOWD_ARGON_MEMORY_KIB", 19456)?;
         let argon_iterations = number("WORKFLOWD_ARGON_ITERATIONS", 2)?;
+        let draft_lease_ttl_seconds = number("WORKFLOWD_DRAFT_LEASE_TTL_SECONDS", 30)?;
+        let draft_takeover_grace_seconds = number("WORKFLOWD_DRAFT_TAKEOVER_GRACE_SECONDS", 10)?;
+        let draft_snapshot_interval = number("WORKFLOWD_DRAFT_SNAPSHOT_INTERVAL", 16)?;
+        let draft_history_limit = number("WORKFLOWD_DRAFT_HISTORY_LIMIT", 64)?;
+        let draft_undo_limit = number("WORKFLOWD_DRAFT_UNDO_LIMIT", 32)?;
         if session_ttl_seconds < 1
             || login_max_failures < 1
             || argon_memory_kib < 8192
             || argon_iterations < 1
+            || draft_lease_ttl_seconds < 2
+            || draft_takeover_grace_seconds < 1
+            || draft_snapshot_interval < 1
+            || draft_undo_limit < 1
+            || draft_history_limit < draft_undo_limit
+            || draft_lease_ttl_seconds > 3600
+            || draft_takeover_grace_seconds > 300
+            || draft_snapshot_interval > 1024
+            || draft_history_limit > 4096
+            || draft_undo_limit > 512
         {
             return Err(AppError::Configuration(
-                "security limits are below their accepted minimum".into(),
+                "security or Draft limits are outside accepted bounds".into(),
             ));
         }
         Ok(Self {
@@ -76,6 +96,11 @@ impl ServeConfig {
             login_max_failures,
             argon_memory_kib,
             argon_iterations,
+            draft_lease_ttl_seconds,
+            draft_takeover_grace_seconds,
+            draft_snapshot_interval,
+            draft_history_limit,
+            draft_undo_limit,
         })
     }
 }

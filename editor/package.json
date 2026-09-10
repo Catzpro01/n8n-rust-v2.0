@@ -9,13 +9,15 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:browser": "node tests/two-tab.mjs"
   },
   "dependencies": {
     "preact": "10.29.8"
   },
   "devDependencies": {
     "esbuild": "0.25.9",
+    "playwright": "1.62.1",
     "typescript": "5.9.2"
   }
 }
