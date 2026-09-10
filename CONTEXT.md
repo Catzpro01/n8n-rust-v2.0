@@ -101,8 +101,20 @@ A separately budgeted Execution Lane for browsers, scrapers, local models, and o
 _Avoid_: Heavy node
 
 **Node Contract**:
-The reviewable declaration of a Node Definition's inputs, outputs, configuration, capabilities, side effects, determinism, idempotency, and resource budget.
+The versioned reviewable declaration of a Node Definition's inputs, outputs, configuration, capabilities, side effects, determinism, idempotency, and resource budget.
 _Avoid_: Plugin manifest, node schema
+
+**Node Contract Lock**:
+The exact Node Contract identity, version, and digest pinned by a Workflow Revision so its behavior cannot change silently.
+_Avoid_: Version range, latest node
+
+**Port Schema**:
+The declared shape and cardinality accepted or emitted by a named Node Contract port, including an explicit dynamic-item form when static typing is not possible.
+_Avoid_: Rust type, UI field type
+
+**Resource Budget**:
+The declared default and hard bounds for an Activation's time, CPU, memory, output, Artifact, and concurrency consumption.
+_Avoid_: Resource request when referring to enforced limits
 
 **Capability Grant**:
 An explicit, least-privilege authorization for one Node Instance to use a named host facility or credential scope during an Activation.
