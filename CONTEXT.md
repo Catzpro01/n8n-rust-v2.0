@@ -228,6 +228,26 @@ _Avoid_: Offline Draft, local Workflow
 A signed Workflow Revision approved for production Runs under one Compatibility Profile.
 _Avoid_: Active workflow
 
+**Production Bundle**:
+A signed self-contained release containing the stripped daemon, embedded editor, compatibility metadata, migrations, notices, and deployment definitions but no build toolchain.
+_Avoid_: Source checkout, development environment
+
+**Release Slot**:
+One immutable installed Production Bundle eligible to become current or to serve as the previous rollback target.
+_Avoid_: Mutable installation directory
+
+**Recovery Set**:
+A consistent verified snapshot manifest covering SQLite state, Artifact roots, encrypted vault metadata, configuration identity, and required release/plan versions.
+_Avoid_: Database copy when other state is missing
+
+**Recovery Kit**:
+The separately protected owner-held material and instructions needed to authenticate releases and unlock restored encrypted state after host loss.
+_Avoid_: Ordinary backup stored on the same host
+
+**Recovery Objective**:
+The declared maximum target data-loss window and restoration time for a named failure class.
+_Avoid_: Guarantee when external backup infrastructure is unavailable
+
 **Causal Trace**:
 The ordered evidence connecting triggers, Activations, data references, decisions, retries, resource use, and errors within a Run.
 _Avoid_: Execution log
