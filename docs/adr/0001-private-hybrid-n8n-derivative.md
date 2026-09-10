@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0050
 ---
 # Build a private hybrid n8n derivative
 

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0050
 ---
 # Adapt the n8n editor behind a client seam
 
