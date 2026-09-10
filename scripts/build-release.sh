@@ -22,6 +22,7 @@ install -D -m 0644 packaging/workflowd.env "$bundle/etc/workflowd/workflowd.env"
 install -D -m 0644 LICENSE "$bundle/usr/share/doc/workflowd/LICENSE"
 cp -a LICENSES "$bundle/usr/share/doc/workflowd/"
 install -D -m 0644 contracts/manual-trigger.v1alpha1.json "$bundle/usr/share/workflowd/contracts/manual-trigger.v1alpha1.json"
+mkdir -p "$bundle/usr/share/workflowd/sdk"
 cp -a sdk/node-contract "$bundle/usr/share/workflowd/sdk/"
 
 python3 tools/release_metadata.py "$bundle"

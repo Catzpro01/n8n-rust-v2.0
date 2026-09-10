@@ -32,6 +32,12 @@ class ReleaseBundleAcceptanceTest(unittest.TestCase):
         self.assertIn(
             "usr/share/doc/workflowd/dependency-lock-checksums.json", relative
         )
+        self.assertIn(
+            "usr/share/workflowd/sdk/node-contract/v1alpha1/meta-schema.json", relative
+        )
+        self.assertIn(
+            "usr/share/workflowd/contracts/manual-trigger.v1alpha1.json", relative
+        )
 
         forbidden_suffixes = (".rs", ".tsx", ".ts", ".map", ".pyc")
         self.assertFalse([name for name in relative if name.endswith(forbidden_suffixes)])
