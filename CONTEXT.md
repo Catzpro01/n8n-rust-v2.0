@@ -195,3 +195,15 @@ _Avoid_: Trust score when referring to the underlying facts
 **Rust Promotion Track**:
 The measured migration path by which a remote or isolated adapter gains a behavior-compatible Native Node implementation and becomes the preferred execution path.
 _Avoid_: Rewrite when only the orchestration adapter changes language
+
+**Execution Segment**:
+A compiled group of compatible logical Activations that can execute together while preserving each Node Instance's observable output, error, and trace semantics.
+_Avoid_: Fused node, physical node
+
+**Resource Governor**:
+The policy module that observes effective CPU, memory, disk, I/O, and pressure limits and continuously adjusts admission, concurrency, batching, caching, spill, and remote placement.
+_Avoid_: Autoscaler when no new machine is being created
+
+**Resource Profile**:
+A named target envelope for CPU, memory, disk, latency, and throughput against which a deployment and benchmark are evaluated.
+_Avoid_: Server size

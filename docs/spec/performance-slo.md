@@ -17,3 +17,7 @@ This is a repeatable baseline for the always-resident Rust daemon and Inline Nat
 ## Required evidence
 
 The repository must contain a deterministic workflow generator, benchmark runner, peak-RSS capture, restart/fault-injection test, and a checked result for the deployment VPS.
+
+## Adaptive CPU evidence
+
+The same correctness fixture runs under cgroup-enforced 0.5, 1, and 2 logical-core quotas. Results report wall time separately from CPU time and must show monotonic throughput scaling when the workload has parallel CPU work. Eco-profile completion is mandatory; equal speed to the two-core profile is not claimed for CPU-bound work unless optimization or remote placement removes equivalent local computation.
