@@ -13,7 +13,7 @@ cleanup() {
 }
 trap cleanup EXIT
 cleanup
-sudo rm -rf /var/lib/workflow-rust /run/workflow-rust /etc/workflowd /etc/workflowd
+sudo rm -rf /var/lib/workflow-rust /run/workflow-rust /etc/workflowd
 sudo ./scripts/install.sh --bundle "$bundle" --bind "127.0.0.1:$port"
 
 for _ in {1..100}; do
@@ -83,4 +83,4 @@ sudo test -f /etc/workflowd/master.key
 trap - EXIT
 printf 'systemd-smoke=passed state-preserved=/var/lib/workflow-rust/workflow.sqlite3 rss_bytes=%s idle_cpu_cores=%s hardening_exposure=%s\n' \
   "$rss_bytes" "$idle_cpu_cores" "$exposure"
-sudo rm -rf /var/lib/workflow-rust /run/workflow-rust
+sudo rm -rf /var/lib/workflow-rust /run/workflow-rust /etc/workflowd
