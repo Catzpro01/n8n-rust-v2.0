@@ -248,6 +248,18 @@ _Avoid_: Ordinary backup stored on the same host
 The declared maximum target data-loss window and restoration time for a named failure class.
 _Avoid_: Guarantee when external backup infrastructure is unavailable
 
+**Recovery Reserve**:
+Protected managed-disk capacity unavailable to ordinary workload growth so checkpoints, updates, backups, rollback, and repair can complete safely.
+_Avoid_: Free space that workflows may consume
+
+**Restore Drill**:
+A non-production reconstruction and verification of a Recovery Set that proves state can be opened without activating workflow side effects.
+_Avoid_: Backup checksum check
+
+**Disaster-Recovery Ready**:
+A deployment status granted only while a recent verified off-site Recovery Set and usable owner-held Recovery Kit satisfy the declared Recovery Objective.
+_Avoid_: Backed up when all copies remain on one host
+
 **Causal Trace**:
 The ordered evidence connecting triggers, Activations, data references, decisions, retries, resource use, and errors within a Run.
 _Avoid_: Execution log
