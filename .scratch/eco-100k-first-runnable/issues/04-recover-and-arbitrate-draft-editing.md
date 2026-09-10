@@ -32,6 +32,6 @@
 - `make test` passes Rust unit tests, all eight external Python acceptances, and the real Chromium two-tab journey.
 - Strict workspace/all-target Clippy, Rust formatting, frontend typecheck/build, `npm audit`, and `cargo audit --deny warnings` pass.
 - Chromium was run three consecutive times after stabilizing command-completion waits and copied-tab identity coverage.
-- The final stripped production binary is 6,397,824 bytes; the complete bundle is 6,599,799 bytes and contains no browser, Playwright runtime, Node.js, Python, Rust toolchain, source, or source-map file.
+- The final stripped production binary is 6,397,824 bytes; the complete bundle is 6,599,793 bytes and contains no browser, Playwright runtime, Node.js, Python, Rust toolchain, source, or source-map file.
 - SBOM/license metadata covers 159 locked components; Playwright and Playwright Core are marked excluded development dependencies.
 - Native systemd smoke passes with 28,135,424-byte RSS, 0.0000 idle CPU cores, 0 swap, one resident daemon, and hardening exposure 1.6.
