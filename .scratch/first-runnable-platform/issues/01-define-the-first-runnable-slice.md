@@ -1,7 +1,7 @@
 # Define the first runnable vertical slice
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: none
 
 ## Question
