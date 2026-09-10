@@ -111,3 +111,27 @@ _Avoid_: Public server, public UI
 **Compatibility Profile**:
 A versioned statement of supported behavior against one frozen n8n release, backed by compatibility tests and migration rules.
 _Avoid_: n8n version, compatibility mode
+
+**Agent Engine**:
+The selected reasoning and action runtime for one AI Agent turn, whether built in or reached through a model, MCP, A2A, CLI, or process adapter.
+_Avoid_: Model when the runtime performs more than inference
+
+**Memory Layer**:
+One independently governed source and sink of retained agent context with a defined scope, retrieval policy, write policy, provenance, and budget.
+_Avoid_: Memory provider
+
+**Memory Stack**:
+An ordered set of Memory Layers consulted under one retrieval and token policy.
+_Avoid_: Combined memory
+
+**Skill Set**:
+A version-locked collection of instructions and resources granted to an AI Agent under a declared scope and capability policy.
+_Avoid_: Prompt pack, skill folder
+
+**Output Contract**:
+The typed, side-effect-free shape an AI Agent result must satisfy before it can enter the main workflow.
+_Avoid_: Output parser
+
+**Agent Policy**:
+The enforceable limits and approval rules governing an AI Agent's models, tools, memory, costs, recursion, and side effects.
+_Avoid_: System prompt, guardrail prompt
