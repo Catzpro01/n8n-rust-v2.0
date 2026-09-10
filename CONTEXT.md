@@ -28,6 +28,14 @@ _Avoid_: Edge, wire
 One durable execution of exactly one Workflow Revision.
 _Avoid_: Execution, job
 
+**Run Admission**:
+The budgeted durable acceptance of a trigger as a Queued Run; a trigger rejected before admission is not a Run.
+_Avoid_: Enqueue when durability has not been established
+
+**Logical Order**:
+The deterministic ordering of Activation outcomes and Causal Trace evidence independent of concurrent completion timing.
+_Avoid_: Wall-clock order
+
 **Activation**:
 One scheduled attempt to process a Node Instance within a Run for a particular input envelope.
 _Avoid_: Node execution, task
@@ -39,6 +47,10 @@ _Avoid_: Item when referring to the internal runtime representation
 **Artifact**:
 Content-addressed run data stored outside an Envelope and read as a stream.
 _Avoid_: Binary data, blob, payload file
+
+**Artifact Namespace**:
+The authorization, encryption-key, and deduplication boundary within which equal Artifact content may share storage.
+_Avoid_: Bucket when referring to the security boundary
 
 **Native Node**:
 A Node Definition executed by the Rust runtime without a language compatibility layer.
