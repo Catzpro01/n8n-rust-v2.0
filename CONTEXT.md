@@ -135,3 +135,19 @@ _Avoid_: Output parser
 **Agent Policy**:
 The enforceable limits and approval rules governing an AI Agent's models, tools, memory, costs, recursion, and side effects.
 _Avoid_: System prompt, guardrail prompt
+
+**Mutable Draft**:
+The editable, autosaved working form of a Workflow that cannot be used for a production Run.
+_Avoid_: Development workflow
+
+**Published Revision**:
+A signed Workflow Revision approved for production Runs under one Compatibility Profile.
+_Avoid_: Active workflow
+
+**Causal Trace**:
+The ordered evidence connecting triggers, Activations, data references, decisions, retries, resource use, and errors within a Run.
+_Avoid_: Execution log
+
+**Durable Suspension**:
+A persisted Run state that consumes no active execution slot while awaiting time, callback, event, or approval.
+_Avoid_: Sleeping task, waiting thread
