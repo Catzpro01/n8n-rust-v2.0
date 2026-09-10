@@ -140,6 +140,18 @@ _Avoid_: System prompt, guardrail prompt
 The editable, autosaved working form of a Workflow that cannot be used for a production Run.
 _Avoid_: Development workflow
 
+**Editor Session**:
+One connected browser context that can observe a Mutable Draft and may hold its Draft Lease.
+_Avoid_: Tab, frontend client
+
+**Draft Lease**:
+Time-bounded exclusive authority for one Editor Session to change a Mutable Draft; other Editor Sessions can observe, request takeover, or fork.
+_Avoid_: File lock, workflow lock
+
+**Recovery Copy**:
+Best-effort Draft changes retained by an Editor Session but not yet accepted by the authoritative daemon; it must be reconciled before publish.
+_Avoid_: Offline Draft, local Workflow
+
 **Published Revision**:
 A signed Workflow Revision approved for production Runs under one Compatibility Profile.
 _Avoid_: Active workflow
