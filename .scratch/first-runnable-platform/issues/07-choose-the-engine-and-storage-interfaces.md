@@ -1,7 +1,7 @@
 # Choose the engine and storage interfaces
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 02, 04
 
 ## Question
