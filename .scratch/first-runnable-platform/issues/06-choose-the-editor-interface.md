@@ -1,7 +1,7 @@
 # Choose the independent editor interface
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 03, 04
 
 ## Question
