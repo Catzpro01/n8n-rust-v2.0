@@ -168,6 +168,26 @@ _Avoid_: Active workflow
 The ordered evidence connecting triggers, Activations, data references, decisions, retries, resource use, and errors within a Run.
 _Avoid_: Execution log
 
+**Durable Checkpoint**:
+An atomically persisted boundary from which a Run can recover with bounded deterministic replay after interruption.
+_Avoid_: Progress update, autosave
+
+**Speculative Progress**:
+Completed Run work after the latest Durable Checkpoint that may be replayed if interruption occurs before it is committed.
+_Avoid_: Durable progress
+
+**Uncertain Outcome**:
+The recorded state of a side-effecting Activation when an external system may have acted but success or failure cannot be proven safely.
+_Avoid_: Failure when the external effect may have succeeded
+
+**Retention Profile**:
+The policy that selects full, compacted, expired, or pinned Causal Trace and Artifact evidence under a storage budget.
+_Avoid_: Log level
+
+**Evidence Pin**:
+An explicit hold that prevents selected Causal Trace or Artifact evidence from being compacted or expired.
+_Avoid_: Favorite, archive
+
 **Durable Suspension**:
 A persisted Run state that consumes no active execution slot while awaiting time, callback, event, or approval.
 _Avoid_: Sleeping task, waiting thread
