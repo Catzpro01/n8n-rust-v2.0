@@ -179,3 +179,15 @@ _Avoid_: Scraper when referring to the selectable implementation
 **Scrape Result Bundle**:
 The typed result for one fetched resource, combining selected Artifacts, normalized content, extracted records, links, provenance, and confidence.
 _Avoid_: Scraped page
+
+**Workflow Package**:
+A declarative, versioned distribution containing workflow definitions, requirements, evidence, and provenance but no secret values or implicitly executable installer.
+_Avoid_: Template when the distribution includes more than a workflow graph
+
+**Hub Source**:
+A configured catalog or repository origin whose Workflow Package metadata is indexed locally.
+_Avoid_: Marketplace server
+
+**Trust Evidence**:
+Verifiable facts about a Workflow Package's identity, provenance, dependencies, tests, capabilities, maintenance, and sandbox results.
+_Avoid_: Trust score when referring to the underlying facts
