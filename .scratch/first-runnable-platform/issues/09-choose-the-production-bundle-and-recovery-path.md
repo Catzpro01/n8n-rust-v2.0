@@ -1,7 +1,7 @@
 # Choose the production bundle and recovery path
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 06, 07
 
 ## Question
