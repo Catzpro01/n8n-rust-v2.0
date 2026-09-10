@@ -1,7 +1,7 @@
 # Choose the first Node Contract
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: 05, 07
 
 ## Question
