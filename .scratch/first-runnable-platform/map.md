@@ -4,7 +4,11 @@
 
 Reach a clear, implementation-ready route to a first runnable clean-room release: one Rust-only production daemon that serves an independent editor, saves and publishes a small workflow, executes it durably, and proves the 100,000-lightweight-Activation Eco benchmark under 500 MiB RAM, 0.5 CPU, and a 10 GiB managed footprint. The output is ready to collapse through `/to-spec`, then `/to-tickets`.
 
-**Route status: ready for `/to-spec` (all 10 tickets resolved).**
+**Route status: specification published with `ready-for-agent`; ready for `/to-tickets` (all 10 Wayfinder tickets resolved).**
+
+## Published specification
+
+- [First Runnable Independent Workflow Platform — Eco 100K](spec.md): one browser/API/process/cgroup acceptance seam, 114 user stories, implementation decisions, testing decisions, exclusions, and recovery/compatibility constraints; status `ready-for-agent`.
 
 ## Notes
 
