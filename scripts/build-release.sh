@@ -23,13 +23,17 @@ install -D -m 0644 LICENSE "$bundle/usr/share/doc/workflowd/LICENSE"
 cp -a LICENSES "$bundle/usr/share/doc/workflowd/"
 
 python3 tools/release_metadata.py "$bundle"
+checksum_file=$(mktemp)
+trap 'rm -f "$checksum_file"' EXIT
 (
   cd "$bundle"
   find . -type f ! -name checksums.sha256 -print0 \
     | sort -z \
     | xargs -0 sha256sum \
-    | sed 's#  \./#  #' > checksums.sha256
-)
+    | sed 's#  \./#  #'
+) > "$checksum_file"
+mv "$checksum_file" "$bundle/checksums.sha256"
+trap - EXIT
 
 tarball="${bundle%/}.tar.gz"
 rm -f "$tarball"
