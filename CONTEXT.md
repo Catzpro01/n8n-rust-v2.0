@@ -180,6 +180,18 @@ _Avoid_: n8n version, compatibility mode
 The selected reasoning and action runtime for one AI Agent turn, whether built in or reached through a model, MCP, A2A, CLI, or process adapter.
 _Avoid_: Model when the runtime performs more than inference
 
+**Model Route**:
+A versioned policy that selects an allowed provider/model or ordered fallback using capability, health, quota, cost, data, and determinism constraints.
+_Avoid_: Model name when selection can change under policy
+
+**Agent Blueprint**:
+A version-locked visual composition of an Agent Engine, Model Route, Memory Stack, Skill Sets, MCP/tools, Agent Policy, and Output Contract with explicit Global, Project, Workflow, and Node scope inheritance.
+_Avoid_: System prompt, agent preset without dependency locks
+
+**Accelerator Policy**:
+The owner-selected rule for optional GPU or other accelerator use, defaulting to Off and permitting Safe Auto only for eligible tested Node Implementations with declared fallback.
+_Avoid_: GPU detection as execution authority
+
 **Memory Layer**:
 One independently governed source and sink of retained agent context with a defined scope, retrieval policy, write policy, provenance, and budget.
 _Avoid_: Memory provider

@@ -30,15 +30,16 @@ Reach a clear, implementation-ready route to a first runnable clean-room release
 - [Choose the independent editor interface](issues/06-choose-the-editor-interface.md): use connected TypeScript/Preact, imperative virtualized Canvas 2D, durable versioned Draft Commands, a single graceful-takeover Draft Lease, compact topology plus lazy detail, accessible bounded DOM surfaces, and versioned JSON/SSE/binary Rust contracts.
 - [Choose the engine and storage interfaces](issues/07-choose-the-engine-and-storage-interfaces.md): separate a pure compiler and deterministic Run state machine from the governed scheduler, aggregate SQLite checkpoint writer, streamed encrypted Artifact store, and bounded external use-case seams.
 - [Choose the first Node Contract](issues/08-choose-the-first-node-contract.md): publish an Apache-2.0 behavior-first contract and narrow Activation Context, prove it with six deterministic Native Nodes, then expand through a version-pinned Catalog Conformance Matrix for built-ins and installed/curated community packages.
+- [Choose the production bundle and recovery path](issues/09-choose-the-production-bundle-and-recovery-path.md): ship a signed systemd-first one-binary bundle with optional identical OCI form, Current/Previous release slots, protected Recovery Reserve, complete local/off-site Recovery Sets, offline Recovery Kit, restore drills, Quarantine Mode, and opt-in Safe Auto accelerators.
 
-## Not yet specified
+## Intentionally deferred to specification
 
-- Exact Rust module interfaces and storage transaction boundaries for the first vertical slice.
-- Exact Node Contract and SDK surface for the first native nodes.
-- Reproducible production bundle, updater, and rollback details under the 10 GiB profile.
+- Concrete Rust type/module names, SQLite table layouts, wire byte offsets, queue/threshold constants, and filesystem paths.
+- Exact `v1alpha1` Node Contract schema fields and conformance vectors within the accepted ADR boundaries.
+- Measured disk partition values, backup schedules/provider credentials, and release-signing implementation within the accepted recovery policy.
 
 ## Out of scope
 
-- Full n8n node-catalog parity, AI Agent, Scrape Orchestrator, Workflow Hub, and Skill Hub implementation: these remain product goals, including a fixture-backed Catalog Conformance Matrix for all inventoried 2.39.0 built-ins and every installed/curated community-package version plus Play-Store-like in-product search/review/install/update, but receive later maps after the runnable foundation exists.
+- Full n8n node-catalog parity, AI Agent, Scrape Orchestrator, Workflow Hub, and Skill Hub implementation: these remain product goals, including a fixture-backed Catalog Conformance Matrix, Play-Store-like discovery, visual Agent Blueprints showing effective Engine/Model Route/Memory/Skill/MCP/Policy/Output at Global/Project/Workflow/Node scope, adapters for Hermes/OpenClaw/OpenCode/Claude Code/MiroFish/Antigravity and later engines, and native Rust plus external 9Router-compatible model routing, but receive later maps after the runnable foundation exists.
 - Rewriting Chromium, Firefox, hosted scraping providers, or third-party agent products: Rust protocol adapters and remote execution are the boundary.
 - Public launch or commercial distribution: requires specialist legal review and a later release map.
