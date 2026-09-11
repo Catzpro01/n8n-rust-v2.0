@@ -5,6 +5,7 @@ use argon2::{
     Algorithm, Argon2, Params, Version,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use canopy_node_contract::canonical_json;
 use chacha20poly1305::{
     aead::{Aead, KeyInit},
     XChaCha20Poly1305, XNonce,
@@ -400,6 +401,25 @@ impl SecurityService {
         self.recovery.store(2, Ordering::Relaxed);
         Ok(())
     }
+    /// Sign one immutable revision payload with an HMAC-SHA256 key derived
+    /// from the Owner master key. The signature binds the revision number,
+    /// document digest, plan digest, and plan/compiler identity so a client
+    /// can verify the published identity without reading the database.
+    pub fn sign_revision_payload(&self, payload: &Value) -> Result<String, SecurityError> {
+        let master = self
+            .master_key
+            .as_ref()
+            .ok_or_else(|| SecurityError::Internal("master key is unavailable".into()))?;
+        let key = revision_signing_key(master);
+        let message = canonical_json(payload)
+            .map_err(|error| SecurityError::Internal(format!("canonical revision payload: {error}")))?;
+        let mac = hmac_sha256(&key, &message);
+        Ok(format!("hmac-sha256:{:x}", mac))
+    }
+    pub fn record_audit(&self, action: &str, outcome: &str) -> Result<(), SecurityError> {
+        let c = self.connect()?;
+        audit(&c, "owner:1", action, outcome)
+    }
     pub fn audit(&self, token: &str) -> Result<Vec<AuditView>, SecurityError> {
         self.authenticate(token)?;
         let c = self.connect()?;
@@ -596,6 +616,30 @@ fn key_fingerprint(key: &[u8; 32]) -> [u8; 32] {
     h.update(key);
     h.finalize().into()
 }
+fn revision_signing_key(master: &[u8; 32]) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(b"canopy-revision-signing-v1\0");
+    h.update(master);
+    h.finalize().into()
+}
+fn hmac_sha256(key: &[u8; 32], message: &[u8]) -> [u8; 32] {
+    // Manual RFC 2104 HMAC-SHA256 for the 32-byte key: the 64-byte inner and
+    // outer padding blocks are 0x36 and 0x5c, XORed with the key where present.
+    let mut ipad = [0x36u8; 64];
+    let mut opad = [0x5cu8; 64];
+    for index in 0..32 {
+        ipad[index] ^= key[index];
+        opad[index] ^= key[index];
+    }
+    let mut inner = Sha256::new();
+    inner.update(&ipad);
+    inner.update(message);
+    let inner_digest = inner.finalize();
+    let mut outer = Sha256::new();
+    outer.update(&opad);
+    outer.update(inner_digest);
+    outer.finalize().into()
+}
 fn audit(c: &Connection, actor: &str, action: &str, outcome: &str) -> Result<(), SecurityError> {
     c.execute(
         "INSERT INTO owner_audit(occurred_at,actor_id,action,outcome) VALUES(?1,?2,?3,?4)",
@@ -616,4 +660,4 @@ fn sec_internal(e: rusqlite::Error) -> SecurityError {
 fn internal(e: rusqlite::Error) -> AppError {
     AppError::Security(e.to_string())
 }
-use serde_json::json;
+use serde_json::{json, Value};

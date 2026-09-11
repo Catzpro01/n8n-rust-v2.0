@@ -311,7 +311,7 @@ where
         Err(_) => problem(DraftError::Storage("worker".into())),
     }
 }
-async fn read_auth(state: &AppState, headers: &HeaderMap) -> Result<(), Response> {
+pub(crate) async fn read_auth(state: &AppState, headers: &HeaderMap) -> Result<(), Response> {
     let token = owner_http::cookie(headers).ok_or_else(unauthorized)?;
     let security = state.security.clone();
     match tokio::task::spawn_blocking(move || security.authenticate(&token)).await {
@@ -319,7 +319,7 @@ async fn read_auth(state: &AppState, headers: &HeaderMap) -> Result<(), Response
         _ => Err(unauthorized()),
     }
 }
-async fn write_auth(state: &AppState, headers: &HeaderMap) -> Result<(), Response> {
+pub(crate) async fn write_auth(state: &AppState, headers: &HeaderMap) -> Result<(), Response> {
     let (token, csrf) =
         owner_http::mutation_credentials(state, headers).map_err(IntoResponse::into_response)?;
     let security = state.security.clone();

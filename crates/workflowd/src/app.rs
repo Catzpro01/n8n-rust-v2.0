@@ -7,6 +7,8 @@ use crate::{
     draft_http,
     identity::{CapabilityIdentity, ReleaseIdentity, API_VERSION},
     owner_http,
+    revision::RevisionService,
+    revision_http,
     security::{RecoveryHealth, SecurityService},
 };
 use axum::{
@@ -24,6 +26,7 @@ pub struct AppState {
     pub release: ReleaseIdentity,
     pub security: Arc<SecurityService>,
     pub drafts: Arc<DraftService>,
+    pub revisions: Arc<RevisionService>,
 }
 #[derive(Serialize)]
 struct LiveResponse {
@@ -117,6 +120,27 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v1/workflows/{id}/recovery-forks/{fork_id}/apply",
             post(draft_http::apply_fork),
+        )
+        .route(
+            "/api/v1/workflows/{id}/compile",
+            get(revision_http::compile_draft),
+        )
+        .route(
+            "/api/v1/workflows/{id}/publish",
+            post(revision_http::publish),
+        )
+        .route(
+            "/api/v1/workflows/{id}/publication",
+            get(revision_http::publication),
+        )
+        .route(
+            "/api/v1/workflows/{id}/revisions/{revision_number}",
+            get(revision_http::revision),
+        )
+        .route("/api/v1/workflows/{id}/diff", get(revision_http::diff))
+        .route(
+            "/api/v1/workflows/{id}/rollback",
+            post(revision_http::rollback),
         )
         .route("/public/v1/health/live", get(liveness))
         .layer(DefaultBodyLimit::max(16 * 1024))

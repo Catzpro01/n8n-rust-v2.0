@@ -10,6 +10,8 @@ mod draft_http;
 mod error;
 mod identity;
 mod owner_http;
+mod revision;
+mod revision_http;
 mod security;
 
 use crate::app::AppState;
@@ -66,13 +68,17 @@ fn serve() -> Result<(), AppError> {
     let security = security::SecurityService::initialize(&config.state_dir, &config)?;
     let drafts = draft::DraftService::initialize(&config)
         .map_err(|error| AppError::Database(format!("draft schema: {error}")))?;
+    let security = Arc::new(security);
+    let revisions = revision::RevisionService::initialize(&config, security.clone())
+        .map_err(|error| AppError::Database(format!("revision schema: {error}")))?;
     let state = AppState {
         _database_worker: Arc::new(database_worker),
         release: ReleaseIdentity::new(database_identity.runtime_version.clone()),
         database: database_identity,
         resources: cgroup::discover(config.cgroup_dir.as_deref()),
-        security: Arc::new(security),
+        security,
         drafts: Arc::new(drafts),
+        revisions: Arc::new(revisions),
     };
 
     let runtime = Builder::new_multi_thread()

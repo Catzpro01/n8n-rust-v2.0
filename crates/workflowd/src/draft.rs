@@ -1089,6 +1089,16 @@ fn load_stacks_conn(
     ))
 }
 fn load(connection: &Connection, workflow_id: &str) -> Result<WorkflowDraft, DraftError> {
+    load_draft_document(connection, workflow_id)
+        .map_err(|reason| {
+            if reason == "workflow not found" {
+                DraftError::NotFound
+            } else {
+                DraftError::Storage(reason)
+            }
+        })
+}
+pub(crate) fn load_draft_document(connection: &Connection, workflow_id: &str) -> Result<WorkflowDraft, String> {
     let text = connection
         .query_row(
             "SELECT document_json FROM workflow_drafts WHERE workflow_id=?1",
@@ -1097,12 +1107,12 @@ fn load(connection: &Connection, workflow_id: &str) -> Result<WorkflowDraft, Dra
         )
         .map_err(|error| {
             if matches!(error, rusqlite::Error::QueryReturnedNoRows) {
-                DraftError::NotFound
+                "workflow not found".to_string()
             } else {
-                storage(error)
+                error.to_string()
             }
         })?;
-    serde_json::from_str(&text).map_err(storage)
+    serde_json::from_str(&text).map_err(|error| error.to_string())
 }
 fn require_workflow(connection: &Connection, workflow_id: &str) -> Result<(), DraftError> {
     let exists: i64 = connection
@@ -1215,6 +1225,21 @@ fn holder_generation_matches(
             && lease.generation == generation
             && lease.expires_at > now
     }))
+}
+pub(crate) fn lease_holder_generation_matches(
+    connection: &Connection,
+    workflow_id: &str,
+    session: &str,
+    generation: u64,
+    now: i64,
+) -> Result<bool, String> {
+    holder_generation_matches(connection, workflow_id, session, generation, now).map_err(|error| {
+        match error {
+            DraftError::NotFound => "workflow not found".to_string(),
+            DraftError::Storage(reason) => reason,
+            other => format!("{other:?}"),
+        }
+    })
 }
 fn renew_holder(
     transaction: &Transaction,

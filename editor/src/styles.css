@@ -64,3 +64,27 @@ footer { padding-top: 30px; color: #6f8e85; font-size: .72rem; }
 .recovery-fork { border: 1px solid #ef8378; background: rgba(77, 27, 24, .22); padding: 1rem; margin-top: 1rem; }
 .recovery-fork pre { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); }
 @media (max-width: 720px) { .editor-head { display: grid; } .lease { min-width: 0; } }
+.publication { margin-top: 1.4rem; border-top: 1px solid var(--line); padding-top: 1.2rem; }
+.publication .eyebrow { letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-size: .68rem; margin-bottom: .4rem; }
+.pub-states { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .9rem; }
+.pub-states article { border: 1px solid var(--line); border-radius: .35rem; padding: .9rem 1rem; display: grid; gap: .3rem; }
+.pub-states strong { font-size: 1.35rem; }
+.pub-states article[data-testid="published-state"] { border-color: var(--mint); }
+.pub-states p { color: var(--muted); overflow-wrap: anywhere; }
+.diagnostics { list-style: none; display: grid; gap: .5rem; margin: .9rem 0; padding: 0; }
+.diag { border: 1px solid var(--line); border-left: .3rem solid #c6b96a; background: rgba(18, 23, 17, .6); padding: .65rem .8rem; border-radius: .3rem; display: grid; gap: .25rem; }
+.diag.error { border-left-color: #ef8378; }
+.diag code { color: var(--muted); }
+.diag label { display: flex; gap: .45rem; align-items: center; color: var(--muted); font-size: .8rem; }
+.plan-identity { color: var(--mint); overflow-wrap: anywhere; }
+.diff { margin-top: 1rem; border: 1px solid var(--line); padding: 1rem; border-radius: .35rem; }
+.diff h3 { margin-bottom: .8rem; }
+.diff-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .9rem; }
+.diff-columns h4 { color: var(--muted); font-size: .78rem; letter-spacing: .1em; text-transform: uppercase; }
+.diff-columns ul { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .35rem; }
+.diff-columns li { border: 1px dashed var(--line); padding: .45rem .6rem; border-radius: .3rem; overflow-wrap: anywhere; }
+.diff-columns li.muted { color: var(--muted); border-style: dotted; }
+.revision-history { list-style: none; margin: 1.1rem 0 0; padding: 0; display: grid; gap: .4rem; }
+.revision-history li { border: 1px solid var(--line); border-radius: .3rem; padding: .55rem .75rem; color: var(--muted); overflow-wrap: anywhere; }
+.revision-history li[data-status="current"] { border-color: var(--mint); color: var(--ink); }
+@media (max-width: 720px) { .pub-states, .diff-columns { grid-template-columns: 1fr; } }

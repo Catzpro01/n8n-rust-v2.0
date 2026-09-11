@@ -10,7 +10,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit",
-    "test:browser": "node tests/two-tab.mjs"
+    "test:browser": "node tests/two-tab.mjs && node tests/publish.mjs"
   },
   "dependencies": {
     "preact": "10.29.8"

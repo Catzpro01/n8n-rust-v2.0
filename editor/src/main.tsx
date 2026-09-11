@@ -4,7 +4,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { clearOwnerSession, claimEditorSession, loadOwnerSession, saveOwnerSession, type OwnerSession } from "./editor-session";
 import { clearRecoveryCopies, deleteRecoveryCopy, loadRecoveryCopies, purgeExpired, saveRecoveryCopy, type RecoveryCommand } from "./recovery";
-import type { Catalog, EditingStatus, RecoveryFork, WorkflowDraft } from "./editing-types";
+import type { Catalog, CompilePreview, DraftDiffView, EditingStatus, PublishedRevision, PublicationView, RecoveryFork, WorkflowDraft } from "./editing-types";
 import "./styles.css";
 
 type Release = { product: string; version: string; build_commit: string };
@@ -30,6 +30,10 @@ function App() {
   const [forks, setForks] = useState<RecoveryFork[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [publication, setPublication] = useState<PublicationView>();
+  const [preview, setPreview] = useState<CompilePreview>();
+  const [diffView, setDiffView] = useState<DraftDiffView>();
+  const [acked, setAcked] = useState<string[]>([]);
   const [action, setAction] = useState("Sign in as the Owner to author a Draft.");
 
   useEffect(() => {
@@ -77,6 +81,7 @@ function App() {
       setDraft(loaded); setAnnotation(loaded.annotation); setEditing(lease); setPendingCount(recovered.length);
       if (recovered.length) { setSaveState("offline"); setAction("Offline recovery copy is encrypted and waiting for reconciliation."); }
       await refreshForks(workflowId, active);
+      await refreshPublication(workflowId).catch(() => { /* publication panel stays empty */ });
     };
     void open().catch(showError);
     const polling = window.setInterval(() => {
@@ -169,7 +174,7 @@ function App() {
     await sendRecoverable(draft.workflow_id, { editor_session_id: editorSessionId, lease_generation: editing?.lease_generation ?? 0, command_id: `${kind}-${crypto.randomUUID()}`, base_draft_version: draft.draft_version, operation: { kind } });
   }
   async function refreshDraft(id = workflowId) {
-    const loaded = await requestJson<WorkflowDraft>(`/api/v1/workflows/${encodeURIComponent(id)}`); setDraft(loaded); setAnnotation(loaded.annotation); await refreshForks(id, true);
+    const loaded = await requestJson<WorkflowDraft>(`/api/v1/workflows/${encodeURIComponent(id)}`); setDraft(loaded); setAnnotation(loaded.annotation); await refreshForks(id, true); await refreshPublication(id).catch(() => { /* publication panel stays empty */ });
   }
   async function refreshForks(id: string, active: boolean) {
     const response = await requestJson<{ forks: RecoveryFork[] }>(`/api/v1/workflows/${encodeURIComponent(id)}/recovery-forks`); if (active) setForks(response.forks);
@@ -202,6 +207,42 @@ function App() {
     if (!draft) return;
     const accepted = await mutateJson<{ draft_version: number }>(`/api/v1/workflows/${workflowId}/recovery-forks/${fork.fork_id}/apply`, { editor_session_id: editorSessionId, lease_generation: editing?.lease_generation ?? 0, command_id: `apply-${crypto.randomUUID()}`, base_draft_version: draft.draft_version }); setSaveState("saved"); setAction(`Recovery fork applied at Draft Version ${accepted.draft_version}.`); await refreshDraft();
   }
+  async function refreshPublication(id = workflowId) {
+    const [pub, diff] = await Promise.all([
+      requestJson<PublicationView>(`/api/v1/workflows/${encodeURIComponent(id)}/publication`),
+      requestJson<DraftDiffView>(`/api/v1/workflows/${encodeURIComponent(id)}/diff`),
+    ]);
+    setPublication(pub); setDiffView(diff);
+  }
+  async function compileDraft() {
+    const result = await requestJson<CompilePreview>(`/api/v1/workflows/${encodeURIComponent(workflowId)}/compile`);
+    setPreview(result);
+    if (result.status === "failed") setAction(`Compilation failed with ${result.diagnostics.length} diagnostic(s).`);
+    else if (result.status === "warnings") setAction(`Compilation ready with ${result.diagnostics.length} warning(s); designated warnings need acknowledgement.`);
+    else setAction("Compilation clean: the deterministic plan is ready.");
+  }
+  async function publishDraft() {
+    if (!draft || !editing) return;
+    const designated = (preview?.diagnostics ?? []).filter((diag) => diag.require_acknowledgement).map((diag) => diag.code);
+    const published = await mutateJson<PublishedRevision>(`/api/v1/workflows/${encodeURIComponent(workflowId)}/publish`, {
+      editor_session_id: editorSessionId,
+      lease_generation: editing.lease_generation,
+      base_draft_version: draft.draft_version,
+      acknowledged_warnings: acked.filter((code) => designated.includes(code)),
+    });
+    setAcked([]); setPreview(undefined); setSaveState("saved");
+    setAction(`Published Revision ${published.revision_number} — document ${published.document_digest.slice(0, 22)}…, plan ${published.plan_digest.slice(0, 22)}…, signed ${published.signature.slice(0, 24)}…`);
+    await refreshPublication(); await refreshDraft();
+  }
+  async function rollbackPublication() {
+    const view = await mutateJson<PublicationView>(`/api/v1/workflows/${encodeURIComponent(workflowId)}/rollback`, {});
+    setPublication(view);
+    setAction(`Rolled back: current Published Revision is now ${view.current_revision}. Neither the old nor the new revision was edited or deleted.`);
+    await refreshPublication();
+  }
+  function toggleAck(code: string) {
+    setAcked((current) => current.includes(code) ? current.filter((item) => item !== code) : [...current, code]);
+  }
 
   const canWrite = editing?.role === "holder";
   return <main class="shell">
@@ -215,6 +256,30 @@ function App() {
       <div class="editor-actions">{editing?.role === "read_only" && !editing.takeover && <button data-testid="request-takeover" onClick={() => void requestTakeover().catch(showError)}>Request takeover</button>}{editing?.role === "read_only" && editing.takeover?.requested_by_me && <button data-testid="claim-takeover" disabled={editing.server_time < editing.takeover.eligible_at} onClick={() => void claimTakeover().catch(showError)}>Claim after grace</button>}{canWrite && editing?.takeover && <><button data-testid="approve-takeover" onClick={() => void respondTakeover(true).catch(showError)}>Approve takeover</button><button onClick={() => void respondTakeover(false).catch(showError)}>Decline</button></>}{canWrite && <button data-testid="release-lease" onClick={() => void releaseLease().catch(showError)}>Release Lease</button>}<button data-testid="refresh-draft" onClick={() => void refreshDraft().catch(showError)}>Refresh Draft</button></div>
       <label class="annotation">Workflow annotation<textarea data-testid="annotation" disabled={!canWrite} value={annotation} onInput={(event) => setAnnotation(event.currentTarget.value)} /></label><div class="editor-actions"><button data-testid="save-annotation" disabled={!canWrite} onClick={() => void saveAnnotation().catch(showError)}>Save annotation</button><button data-testid="undo" disabled={!canWrite} onClick={() => void historyCommand("undo").catch(showError)}>Undo</button><button data-testid="redo" disabled={!canWrite} onClick={() => void historyCommand("redo").catch(showError)}>Redo</button>{pendingCount > 0 && <button data-testid="recover-pending" onClick={() => void recoverPending().catch(showError)}>Reconcile {pendingCount} recovery copy</button>}</div>
       {forks.filter((fork) => fork.status === "open").map((fork) => <article class="recovery-fork" data-testid="recovery-fork" key={fork.fork_id}><h3>Recovery fork</h3><p>Base {fork.diff.base_draft_version} → current {fork.diff.current_draft_version}; authority changed: {String(fork.diff.authority_changed)}</p><pre>{JSON.stringify(fork.pending_operation, null, 2)}</pre><button data-testid="apply-fork" disabled={!canWrite} onClick={() => void applyFork(fork).catch(showError)}>Apply recovered work</button></article>)}
+      {draft && <section class="publication" data-testid="publication" data-current-revision={publication?.current_revision ?? null}>
+        <div class="pub-states">
+          <article data-testid="draft-state"><p class="eyebrow">Mutable Draft</p><strong>v{draft.draft_version}</strong><p>Editable working state</p></article>
+          <article data-testid="published-state"><p class="eyebrow">Published Revision</p><strong>{publication?.current_revision != null ? `v${publication.current_revision}` : "none"}</strong><p>{publication?.revisions.find((rev) => rev.revision_number === publication?.current_revision)?.document_digest ?? "Nothing published yet"}</p></article>
+        </div>
+        <div class="editor-actions">
+          <button data-testid="compile-draft" onClick={() => void compileDraft().catch(showError)}>Compile Draft</button>
+          <button data-testid="publish-draft" disabled={!canWrite || preview?.status === "failed"} onClick={() => void publishDraft().catch(showError)}>Publish Draft</button>
+          <button data-testid="rollback-publication" disabled={publication?.current_revision == null || publication.current_revision < 2} onClick={() => void rollbackPublication().catch(showError)}>Roll back to previous</button>
+        </div>
+        {preview && preview.diagnostics.length > 0 && <ul class="diagnostics" data-testid="diagnostics">{preview.diagnostics.map((diag) => <li key={`${diag.code}:${diag.path}`} class={`diag ${diag.severity}`} data-testid={`diag-${diag.code}`} data-require-ack={String(diag.require_acknowledgement)}><strong>{diag.code}</strong> {diag.message} <code>{diag.path}</code>{diag.require_acknowledgement && <label data-testid={`ack-${diag.code}`}><input type="checkbox" checked={acked.includes(diag.code)} onChange={() => toggleAck(diag.code)} /> acknowledge in publication evidence</label>}</li>)}</ul>}
+        {preview?.plan && <p class="plan-identity" data-testid="plan-identity">{preview.plan.plan_format} · {preview.plan.compiler_algorithm} · {preview.plan.plan_digest}</p>}
+        <div class="diff" data-testid="publication-diff" data-published-revision={String(diffView?.published_revision ?? "none")}>
+          <h3>Draft versus Published</h3>
+          {diffView?.published_revision == null ? <p>No Published Revision yet — publish to see the visual difference.</p> : <>
+            <div class="diff-columns">
+              <div data-testid="diff-added"><h4>Added</h4><ul>{diffView.nodes.added.map((node) => <li key={node.id} data-testid="diff-node-added">{node.name} <code>{node.id}</code></li>)}{diffView.connections.added.map((connection) => <li key={connection} data-testid="diff-connection-added">{connection}</li>)}{diffView.workflow_fields.annotation && <li data-testid="diff-field-annotation">annotation</li>}{diffView.workflow_fields.settings && <li data-testid="diff-field-settings">settings</li>}{diffView.workflow_fields.name && <li data-testid="diff-field-name">name</li>}{diffView.workflow_fields.compatibility_metadata && <li data-testid="diff-field-metadata">compatibility metadata</li>}{diffView.nodes.added.length === 0 && diffView.connections.added.length === 0 && !diffView.workflow_fields.annotation && !diffView.workflow_fields.settings && !diffView.workflow_fields.name && !diffView.workflow_fields.compatibility_metadata && <li class="muted">none</li>}</ul></div>
+              <div data-testid="diff-removed"><h4>Removed</h4><ul>{diffView.nodes.removed.map((node) => <li key={node.id} data-testid="diff-node-removed">{node.name} <code>{node.id}</code></li>)}{diffView.connections.removed.map((connection) => <li key={connection} data-testid="diff-connection-removed">{connection}</li>)}{diffView.nodes.removed.length === 0 && diffView.connections.removed.length === 0 && <li class="muted">none</li>}</ul></div>
+              <div data-testid="diff-modified"><h4>Modified</h4><ul>{diffView.nodes.modified.map((node) => <li key={node.id} data-testid="diff-node-modified">{node.name} <code>{node.id}</code> — {node.changed.join(", ")}</li>)}{diffView.nodes.modified.length === 0 && <li class="muted">none</li>}</ul></div>
+            </div>
+          </>}
+        </div>
+        {publication && publication.revisions.length > 0 && <ol class="revision-history" data-testid="revision-history">{[...publication.revisions].reverse().map((rev) => <li key={rev.revision_number} data-testid={`revision-${rev.revision_number}`} data-status={rev.status}>v{rev.revision_number} · from draft v{rev.draft_version} · {rev.status} · {rev.document_digest}</li>)}</ol>}
+      </section>}
     </section>}
     {snapshot.error && <p role="alert" class="error">Daemon connection failed: {snapshot.error}</p>}<footer>Placeholder identity · independently authored · no third-party editor assets</footer>
   </main>;
