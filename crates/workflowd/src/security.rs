@@ -85,6 +85,11 @@ pub struct AuditView {
     pub outcome: String,
 }
 
+pub struct WrappedPublicationSeed {
+    pub nonce: [u8; 24],
+    pub ciphertext: Vec<u8>,
+}
+
 pub struct SecurityService {
     database: PathBuf,
     master_key: Option<Zeroizing<[u8; 32]>>,
@@ -420,6 +425,72 @@ impl SecurityService {
             .map_err(sec_internal)?;
         Ok(events)
     }
+    pub fn wrap_publication_seed(
+        &self,
+        key_id: &str,
+        seed: &[u8; 32],
+    ) -> Result<WrappedPublicationSeed, SecurityError> {
+        if self.recovery.load(Ordering::Relaxed) == 0 {
+            return Err(SecurityError::Unauthorized);
+        }
+        let master = self
+            .master_key
+            .as_ref()
+            .ok_or_else(|| SecurityError::Internal("master key is unavailable".into()))?;
+        let mut nonce = [0_u8; 24];
+        OsRng.fill_bytes(&mut nonce);
+        let cipher = XChaCha20Poly1305::new_from_slice(master.as_ref())
+            .map_err(|_| SecurityError::Internal("publication wrapping cipher".into()))?;
+        let aad = publication_key_aad(key_id);
+        let ciphertext = cipher
+            .encrypt(
+                XNonce::from_slice(&nonce),
+                chacha20poly1305::aead::Payload {
+                    msg: seed,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| SecurityError::Internal("publication key wrapping failed".into()))?;
+        Ok(WrappedPublicationSeed { nonce, ciphertext })
+    }
+    pub fn unwrap_publication_seed(
+        &self,
+        key_id: &str,
+        nonce: &[u8],
+        ciphertext: &[u8],
+    ) -> Result<Zeroizing<[u8; 32]>, SecurityError> {
+        if nonce.len() != 24 {
+            return Err(SecurityError::Internal(
+                "publication key wrapping nonce has invalid length".into(),
+            ));
+        }
+        let master = self
+            .master_key
+            .as_ref()
+            .ok_or_else(|| SecurityError::Internal("master key is unavailable".into()))?;
+        let cipher = XChaCha20Poly1305::new_from_slice(master.as_ref())
+            .map_err(|_| SecurityError::Internal("publication wrapping cipher".into()))?;
+        let aad = publication_key_aad(key_id);
+        let plaintext = Zeroizing::new(
+            cipher
+                .decrypt(
+                    XNonce::from_slice(nonce),
+                    chacha20poly1305::aead::Payload {
+                        msg: ciphertext,
+                        aad: &aad,
+                    },
+                )
+                .map_err(|_| SecurityError::Internal("publication key unwrapping failed".into()))?,
+        );
+        if plaintext.len() != 32 {
+            return Err(SecurityError::Internal(
+                "publication signing seed has invalid length".into(),
+            ));
+        }
+        let mut seed = Zeroizing::new([0_u8; 32]);
+        seed.copy_from_slice(&plaintext);
+        Ok(seed)
+    }
     fn argon(&self) -> Argon2<'static> {
         Argon2::new(
             Algorithm::Argon2id,
@@ -595,6 +666,11 @@ fn key_fingerprint(key: &[u8; 32]) -> [u8; 32] {
     h.update(b"canopy-master-key-v1\0");
     h.update(key);
     h.finalize().into()
+}
+fn publication_key_aad(key_id: &str) -> Vec<u8> {
+    let mut aad = b"canopy:publication-signing-key-wrap:v1\0".to_vec();
+    aad.extend_from_slice(key_id.as_bytes());
+    aad
 }
 fn audit(c: &Connection, actor: &str, action: &str, outcome: &str) -> Result<(), SecurityError> {
     c.execute(

@@ -14,6 +14,7 @@ repository = "https://github.com/Catzpro01/n8n-rust-v2.0"
 argon2 = "=0.5.3"
 base64 = "=0.22.1"
 chacha20poly1305 = "=0.10.1"
+ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["alloc", "signature", "zeroize"] }
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
 subtle = "=2.6.1"
 zeroize = "=1.9.0"
@@ -23,6 +24,7 @@ rusqlite = { version = "=0.40.2", default-features = false, features = ["backup"
 rustls = { version = "=0.23.44", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.145"
+serde_jcs = "=0.2.0"
 sha2 = "=0.10.9"
 thiserror = "=2.0.16"
 tokio = { version = "=1.53.1", default-features = false, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }

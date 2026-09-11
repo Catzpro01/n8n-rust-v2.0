@@ -7,6 +7,8 @@ use crate::{
     draft_http,
     identity::{CapabilityIdentity, ReleaseIdentity, API_VERSION},
     owner_http,
+    publication::PublicationService,
+    publication_http,
     security::{RecoveryHealth, SecurityService},
 };
 use axum::{
@@ -24,6 +26,7 @@ pub struct AppState {
     pub release: ReleaseIdentity,
     pub security: Arc<SecurityService>,
     pub drafts: Arc<DraftService>,
+    pub publications: Arc<PublicationService>,
 }
 #[derive(Serialize)]
 struct LiveResponse {
@@ -68,6 +71,26 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v1/workflows/{id}/draft-commands",
             post(draft_http::command),
+        )
+        .route(
+            "/api/v1/workflows/{id}/compile-preview",
+            post(publication_http::preview),
+        )
+        .route(
+            "/api/v1/workflows/{id}/publish",
+            post(publication_http::publish),
+        )
+        .route(
+            "/api/v1/workflows/{id}/rollback",
+            post(publication_http::rollback),
+        )
+        .route(
+            "/api/v1/workflows/{id}/publication",
+            get(publication_http::status),
+        )
+        .route(
+            "/api/v1/workflows/{id}/revisions/{revision_id}",
+            get(publication_http::revision),
         )
         .route(
             "/api/v1/workflows/{id}/editor-session",

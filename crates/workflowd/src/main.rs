@@ -2,7 +2,9 @@
 
 mod app;
 mod assets;
+mod canonical;
 mod cgroup;
+mod compiler;
 mod config;
 mod database;
 mod draft;
@@ -10,6 +12,8 @@ mod draft_http;
 mod error;
 mod identity;
 mod owner_http;
+mod publication;
+mod publication_http;
 mod security;
 
 use crate::app::AppState;
@@ -63,16 +67,26 @@ fn serve() -> Result<(), AppError> {
 
     let (database_worker, database_identity) =
         DatabaseWorker::start(&config.state_dir, config.sqlite_min_version)?;
-    let security = security::SecurityService::initialize(&config.state_dir, &config)?;
-    let drafts = draft::DraftService::initialize(&config)
-        .map_err(|error| AppError::Database(format!("draft schema: {error}")))?;
+    let security = Arc::new(security::SecurityService::initialize(
+        &config.state_dir,
+        &config,
+    )?);
+    let drafts = Arc::new(
+        draft::DraftService::initialize(&config)
+            .map_err(|error| AppError::Database(format!("draft schema: {error}")))?,
+    );
+    let publications = Arc::new(
+        publication::PublicationService::initialize(&config, security.clone())
+            .map_err(|error| AppError::Database(format!("publication schema: {error}")))?,
+    );
     let state = AppState {
         _database_worker: Arc::new(database_worker),
         release: ReleaseIdentity::new(database_identity.runtime_version.clone()),
         database: database_identity,
         resources: cgroup::discover(config.cgroup_dir.as_deref()),
-        security: Arc::new(security),
-        drafts: Arc::new(drafts),
+        security,
+        drafts,
+        publications,
     };
 
     let runtime = Builder::new_multi_thread()

@@ -4,17 +4,17 @@
 
 **Blocked by:** 04: Recover and arbitrate Draft editing
 
-**Status:** ready-for-agent
+**Status:** completed (2026-09-11)
 
-- [ ] The compiler is a deterministic pure transformation of one Workflow Revision, exact Node Contract Locks, Compatibility Profile, and policy into a plan or structured diagnostics.
-- [ ] Compilation validates graph identities, configuration, ports, expressions, capabilities, effects, budgets, and compatibility status without I/O.
-- [ ] Publish flushes pending Draft Commands, verifies lease holder and exact Draft Version, and blocks stale/invalid/error states.
-- [ ] Designated warnings require explicit acknowledgement and are captured in publication evidence.
-- [ ] Published Revision and Execution Plan record algorithm-tagged digests, compiler/plan format identity, contract locks, and Compatibility Profile and remain immutable after restart.
-- [ ] The editor shows a visual Draft-versus-published difference and distinct Mutable Draft/Published Revision states.
-- [ ] Rollback selects/creates new current work from the preceding revision without editing or deleting either immutable revision.
-- [ ] A plan remains pinned and readable across restart; no run-time or upgrade path silently recompiles it.
-- [ ] Publish and rollback are driven through the public client seam and verified against signed identities rather than direct database inspection.
+- [x] The compiler is a deterministic pure transformation of one Workflow Revision, exact Node Contract Locks, Compatibility Profile, and policy into a plan or structured diagnostics.
+- [x] Compilation validates graph identities, configuration, ports, expressions, capabilities, effects, budgets, and compatibility status without I/O.
+- [x] Publish flushes pending Draft Commands, verifies lease holder and exact Draft Version, and blocks stale/invalid/error states.
+- [x] Designated warnings require explicit acknowledgement and are captured in publication evidence.
+- [x] Published Revision and Execution Plan record algorithm-tagged digests, compiler/plan format identity, contract locks, and Compatibility Profile and remain immutable after restart.
+- [x] The editor shows a visual Draft-versus-published difference and distinct Mutable Draft/Published Revision states.
+- [x] Rollback selects/creates new current work from the preceding revision without editing or deleting either immutable revision.
+- [x] A plan remains pinned and readable across restart; no run-time or upgrade path silently recompiles it.
+- [x] Publish and rollback are driven through the public client seam and verified against signed identities rather than direct database inspection.
 
 ## Confirmed implementation decisions (`/ask-matt`, 2026-09-11)
 
@@ -49,3 +49,17 @@ Newer Published Revisions, Plans, signatures, and publication evidence remain un
 - NIST FIPS 186-5 includes EdDSA/Ed25519 and deterministic signature generation: <https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-5.pdf>.
 - The selected Rust implementation must be exact-version pinned, license-recorded, vulnerability-audited, and checked against the repository Rust MSRV before production use; current API reference: <https://docs.rs/ed25519-dalek/latest/ed25519_dalek/struct.SigningKey.html>.
 - SQLite documents trigger-side `RAISE()` support used by later implementation tests to reject accidental mutation of immutable rows: <https://www.sqlite.org/lang_createtrigger.html#the_raise_function>.
+
+
+## Implementation verification (2026-09-11)
+
+- `cargo +1.85.1 fmt --all -- --check`, workspace Clippy with `-D warnings`, and all Rust tests pass.
+- The RFC 8785 sample and tagged SHA-256 fixture pass; pure compiler tests cover deterministic output plus graph identities, configuration, ports/cardinality, expressions, capabilities, effects, budgets, and Compatibility Profile failures.
+- `make test` passes 10 Rust tests, both browser journeys, and 9 daemon/public API acceptance tests.
+- The publication browser journey passes keyboard operation, warning acknowledgement, two immutable revisions, non-destructive rollback, 390 px overflow, exact reload screenshot comparison, and axe-core with zero serious/critical violations.
+- `test_publication_rollback.py` independently recomputes JCS digests, publication-evidence linkage, key IDs, and RFC 8032 Ed25519 verification from HTTP responses only; debug and release-bundle runs both pass across daemon restart.
+- `cargo-audit 0.22.1` scans 149 locked Cargo dependencies against 1,243 RustSec advisories with no vulnerability finding; `npm audit --audit-level=high` reports zero vulnerabilities.
+- Exact dependency metadata records `serde_jcs 0.2.0` (MIT OR Apache-2.0, Rust 1.85), `ed25519-dalek 3.0.0` (BSD-3-Clause, Rust 1.85), and test-only excluded `axe-core 4.13.0` (MPL-2.0).
+- Release bundle tests and checksum verification pass; the stripped release binary is 7,167,968 bytes.
+- Native systemd smoke passes with 28,942,336 RSS bytes, 0.0000 idle CPU cores, and hardening exposure 1.6 under the existing 500 MiB / 0.5 CPU limits.
+- Verification format, key custody, atomicity, rollback, and no-silent-recompile rules are documented in `docs/publication-signatures.md`.

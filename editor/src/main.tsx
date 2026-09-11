@@ -4,7 +4,7 @@ import { render } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { clearOwnerSession, claimEditorSession, loadOwnerSession, saveOwnerSession, type OwnerSession } from "./editor-session";
 import { clearRecoveryCopies, deleteRecoveryCopy, loadRecoveryCopies, purgeExpired, saveRecoveryCopy, type RecoveryCommand } from "./recovery";
-import type { Catalog, EditingStatus, RecoveryFork, WorkflowDraft } from "./editing-types";
+import type { Catalog, CompilePreview, EditingStatus, PublicationStatus, RecoveryFork, RevisionSummary, WorkflowDraft } from "./editing-types";
 import "./styles.css";
 
 type Release = { product: string; version: string; build_commit: string };
@@ -31,6 +31,10 @@ function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [action, setAction] = useState("Sign in as the Owner to author a Draft.");
+  const [publication, setPublication] = useState<PublicationStatus>();
+  const [compilePreview, setCompilePreview] = useState<CompilePreview>();
+  const [acknowledged, setAcknowledged] = useState<string[]>([]);
+  const [publicationBusy, setPublicationBusy] = useState(false);
 
   useEffect(() => {
     void (owner ? purgeExpired(Date.now()) : clearRecoveryCopies()).catch(showError);
@@ -68,13 +72,16 @@ function App() {
   useEffect(() => {
     if (!owner || !editorSessionId || !workflowId) return;
     let active = true;
+    setCompilePreview(undefined);
+    setAcknowledged([]);
     const open = async () => {
       await purgeExpired(Date.now());
       const loaded = await requestJson<WorkflowDraft>(`/api/v1/workflows/${encodeURIComponent(workflowId)}`);
       const lease = await mutateJson<EditingStatus>(`/api/v1/workflows/${encodeURIComponent(workflowId)}/editing/open`, { editor_session_id: editorSessionId, label: tabLabel(editorSessionId) });
       const recovered = await loadRecoveryCopies(workflowId);
+      const publicationState = await requestJson<PublicationStatus>(`/api/v1/workflows/${encodeURIComponent(workflowId)}/publication`);
       if (!active) return;
-      setDraft(loaded); setAnnotation(loaded.annotation); setEditing(lease); setPendingCount(recovered.length);
+      setDraft(loaded); setAnnotation(loaded.annotation); setEditing(lease); setPendingCount(recovered.length); setPublication(publicationState);
       if (recovered.length) { setSaveState("offline"); setAction("Offline recovery copy is encrypted and waiting for reconciliation."); }
       await refreshForks(workflowId, active);
     };
@@ -140,12 +147,16 @@ function App() {
     const suffix = crypto.randomUUID(); const id = `wf-${suffix}`;
     await mutateJson<WorkflowDraft>("/api/v1/workflows", { workflow_id: id, name: "Manual Trigger Workflow", annotation: "Created from the native catalog", settings: {}, compatibility_metadata: {} });
     const lease = await mutateJson<EditingStatus>(`/api/v1/workflows/${id}/editing/open`, { editor_session_id: editorSessionId, label: tabLabel(editorSessionId) });
-    setEditing(lease); setWorkflowId(id); history.replaceState(null, "", `/?workflow=${encodeURIComponent(id)}`);
+    setEditing(lease);
     const command: RecoveryCommand = { editor_session_id: editorSessionId, lease_generation: lease.lease_generation, command_id: `cmd-${suffix}`, base_draft_version: 0, operation: { kind: "add_node", node_instance: { id: `manual-trigger-${suffix}`, name: node.display_name, contract_lock: node.contract_lock, configuration: { capture_mode: "manual" }, layout: { x: 160, y: 120 }, annotation: "", compatibility_metadata: {} } } };
     await sendRecoverable(id, command);
+    setWorkflowId(id);
+    history.replaceState(null, "", `/?workflow=${encodeURIComponent(id)}`);
   }
   async function sendRecoverable(id: string, command: RecoveryCommand) {
     if (!owner) return;
+    setCompilePreview(undefined);
+    setAcknowledged([]);
     const copyId = `copy-${command.command_id}`;
     await saveRecoveryCopy({ recovery_copy_id: copyId, workflow_id: id, editor_session_id: editorSessionId, expires_at: owner.expires_at * 1000, command });
     setPendingCount((count) => count + 1); setSaveState("saving"); setAction("Saving — command is encrypted locally until the daemon acknowledges it.");
@@ -169,7 +180,17 @@ function App() {
     await sendRecoverable(draft.workflow_id, { editor_session_id: editorSessionId, lease_generation: editing?.lease_generation ?? 0, command_id: `${kind}-${crypto.randomUUID()}`, base_draft_version: draft.draft_version, operation: { kind } });
   }
   async function refreshDraft(id = workflowId) {
-    const loaded = await requestJson<WorkflowDraft>(`/api/v1/workflows/${encodeURIComponent(id)}`); setDraft(loaded); setAnnotation(loaded.annotation); await refreshForks(id, true);
+    const loaded = await requestJson<WorkflowDraft>(`/api/v1/workflows/${encodeURIComponent(id)}`);
+    setDraft(loaded);
+    setAnnotation(loaded.annotation);
+    setCompilePreview((preview) => preview?.draft_version === loaded.draft_version ? preview : undefined);
+    if (compilePreview?.draft_version !== loaded.draft_version) setAcknowledged([]);
+    await Promise.all([refreshForks(id, true), refreshPublication(id)]);
+  }
+  async function refreshPublication(id = workflowId) {
+    if (!id) return;
+    const status = await requestJson<PublicationStatus>(`/api/v1/workflows/${encodeURIComponent(id)}/publication`);
+    setPublication(status);
   }
   async function refreshForks(id: string, active: boolean) {
     const response = await requestJson<{ forks: RecoveryFork[] }>(`/api/v1/workflows/${encodeURIComponent(id)}/recovery-forks`); if (active) setForks(response.forks);
@@ -202,11 +223,79 @@ function App() {
     if (!draft) return;
     const accepted = await mutateJson<{ draft_version: number }>(`/api/v1/workflows/${workflowId}/recovery-forks/${fork.fork_id}/apply`, { editor_session_id: editorSessionId, lease_generation: editing?.lease_generation ?? 0, command_id: `apply-${crypto.randomUUID()}`, base_draft_version: draft.draft_version }); setSaveState("saved"); setAction(`Recovery fork applied at Draft Version ${accepted.draft_version}.`); await refreshDraft();
   }
+  async function runCompilePreview() {
+    if (!draft || !editing) return;
+    setPublicationBusy(true);
+    setAction("Compiling the exact Mutable Draft…");
+    try {
+      const preview = await mutateJson<CompilePreview>(`/api/v1/workflows/${encodeURIComponent(workflowId)}/compile-preview`, {
+        editor_session_id: editorSessionId,
+        lease_generation: editing.lease_generation,
+        draft_version: draft.draft_version,
+      });
+      setCompilePreview(preview);
+      setAcknowledged([]);
+      setAction(preview.can_publish ? "Compile Preview is ready. Review diagnostics and acknowledge designated warnings." : "Compile Preview found blocking errors. Nothing was published.");
+    } finally {
+      setPublicationBusy(false);
+    }
+  }
+  async function publishRevision() {
+    if (!draft || !editing || !compilePreview) return;
+    setPublicationBusy(true);
+    setAction("Recompiling and atomically publishing the exact Draft…");
+    try {
+      await mutateJson<unknown>(`/api/v1/workflows/${encodeURIComponent(workflowId)}/publish`, {
+        publication_id: `publication-${crypto.randomUUID()}`,
+        editor_session_id: editorSessionId,
+        lease_generation: editing.lease_generation,
+        draft_version: draft.draft_version,
+        compile_input_digest: compilePreview.compile_input_digest,
+        acknowledged_diagnostics: acknowledged,
+      });
+      setCompilePreview(undefined);
+      setAcknowledged([]);
+      await refreshPublication();
+      setAction("Signed immutable Revision published with its pinned Execution Plan.");
+    } finally {
+      setPublicationBusy(false);
+    }
+  }
+  async function rollbackRevision(revision: RevisionSummary) {
+    if (!draft || !editing) return;
+    setPublicationBusy(true);
+    setAction(`Signing rollback to immutable Revision ${revision.sequence}…`);
+    try {
+      await mutateJson<unknown>(`/api/v1/workflows/${encodeURIComponent(workflowId)}/rollback`, {
+        rollback_id: `rollback-${crypto.randomUUID()}`,
+        editor_session_id: editorSessionId,
+        lease_generation: editing.lease_generation,
+        draft_version: draft.draft_version,
+        target_revision_id: revision.revision_id,
+      });
+      await refreshPublication();
+      setAction(`Signed rollback completed. Mutable Draft Version ${draft.draft_version} was not replaced.`);
+    } finally {
+      setPublicationBusy(false);
+    }
+  }
+  function toggleAcknowledgement(fingerprint: string, checked: boolean) {
+    setAcknowledged((current) => checked
+      ? [...new Set([...current, fingerprint])]
+      : current.filter((item) => item !== fingerprint));
+  }
 
   const canWrite = editing?.role === "holder";
+  const hasUnsavedAnnotation = Boolean(draft && annotation !== draft.annotation);
+  const queueReady = pendingCount === 0 && saveState !== "saving" && !hasUnsavedAnnotation;
+  const requiredAcknowledgements = compilePreview?.diagnostics.filter((item) => item.requires_ack) ?? [];
+  const acknowledgementsComplete = requiredAcknowledgements.every((item) => acknowledged.includes(item.fingerprint));
+  const previewIsCurrent = Boolean(compilePreview && draft && compilePreview.draft_version === draft.draft_version);
+  const canPublish = Boolean(canWrite && queueReady && previewIsCurrent && compilePreview?.can_publish && acknowledgementsComplete && !publicationBusy);
+  const newerCount = publication?.revisions.filter((item) => item.is_newer_than_current).length ?? 0;
   return <main class="shell">
     <header class="masthead"><div class="identity"><Mark /><div><p class="eyebrow">Independent automation workspace</p><h1>Canopy Workbench</h1></div></div><span class={`health ${snapshot.readiness?.status === "ready" ? "ready" : "waiting"}`}><span aria-hidden="true" />{snapshot.readiness?.status ?? "connecting"}</span></header>
-    <section class="welcome" aria-labelledby="welcome-title"><p class="eyebrow">Loss-aware Draft editing</p><h2 id="welcome-title">One writer. Honest recovery.</h2><p>The daemon grants one renewable Draft Lease. Every uncertain command is encrypted locally until acknowledged.</p>
+    <section class={`welcome ${workflowId ? "editor-context" : ""}`} aria-labelledby="welcome-title"><p class="eyebrow">Loss-aware Draft editing</p><h2 id="welcome-title">One writer. Honest recovery.</h2><p>The daemon grants one renewable Draft Lease. Every uncertain command is encrypted locally until acknowledged.</p>
       {!owner ? <form class="owner-login" onSubmit={(event) => { event.preventDefault(); void signIn().catch(showError); }}><label>Owner email<input data-testid="email" type="email" required value={email} onInput={(event) => setEmail(event.currentTarget.value)} /></label><label>Password<input data-testid="password" type="password" required value={password} onInput={(event) => setPassword(event.currentTarget.value)} /></label><button data-testid="sign-in" type="submit">Sign in</button></form> : <button data-testid="logout" type="button" onClick={() => void logout().catch(showError)}>Sign out and clear recovery copies</button>}
       <p class={`action ${saveState}`} data-testid="save-state" data-state={saveState} role="status">{action}</p>
     </section>
@@ -214,10 +303,41 @@ function App() {
     {workflowId && <section class="editor" data-testid="editor" data-workflow-id={workflowId} data-draft-version={draft?.draft_version ?? -1}><div class="editor-head"><div><p class="eyebrow">Mutable Draft</p><h2>{draft?.name ?? workflowId}</h2><code>{workflowId}</code></div><div class={`lease ${editing?.role ?? "waiting"}`} data-testid="lease-role"><strong>{editing?.role === "holder" ? "Lease holder" : editing?.role === "read_only" ? "Read only" : "Lease available"}</strong><span>generation {editing?.lease_generation ?? "—"}</span>{editing?.holder && <small>{editing.holder.label} · expires {new Date(editing.holder.expires_at).toLocaleTimeString()}</small>}</div></div>
       <div class="editor-actions">{editing?.role === "read_only" && !editing.takeover && <button data-testid="request-takeover" onClick={() => void requestTakeover().catch(showError)}>Request takeover</button>}{editing?.role === "read_only" && editing.takeover?.requested_by_me && <button data-testid="claim-takeover" disabled={editing.server_time < editing.takeover.eligible_at} onClick={() => void claimTakeover().catch(showError)}>Claim after grace</button>}{canWrite && editing?.takeover && <><button data-testid="approve-takeover" onClick={() => void respondTakeover(true).catch(showError)}>Approve takeover</button><button onClick={() => void respondTakeover(false).catch(showError)}>Decline</button></>}{canWrite && <button data-testid="release-lease" onClick={() => void releaseLease().catch(showError)}>Release Lease</button>}<button data-testid="refresh-draft" onClick={() => void refreshDraft().catch(showError)}>Refresh Draft</button></div>
       <label class="annotation">Workflow annotation<textarea data-testid="annotation" disabled={!canWrite} value={annotation} onInput={(event) => setAnnotation(event.currentTarget.value)} /></label><div class="editor-actions"><button data-testid="save-annotation" disabled={!canWrite} onClick={() => void saveAnnotation().catch(showError)}>Save annotation</button><button data-testid="undo" disabled={!canWrite} onClick={() => void historyCommand("undo").catch(showError)}>Undo</button><button data-testid="redo" disabled={!canWrite} onClick={() => void historyCommand("redo").catch(showError)}>Redo</button>{pendingCount > 0 && <button data-testid="recover-pending" onClick={() => void recoverPending().catch(showError)}>Reconcile {pendingCount} recovery copy</button>}</div>
+      <section class="publication-panel" data-testid="publication-panel" aria-labelledby="publication-title">
+        <div class="publication-heading">
+          <div><p class="eyebrow">Review · sign · retain</p><h3 id="publication-title">Publication</h3><p>Compile the exact Draft, then pin a signed plan. Rollback moves only the current pointer.</p></div>
+          <div class={`publication-difference ${publication?.difference.state ?? "unpublished"}`} data-testid="publication-difference" data-state={publication?.difference.state ?? "unpublished"}>
+            <strong>{publication?.difference.state === "matches" ? "Matches published" : publication?.difference.state === "changed" ? "Changed" : "Not published"}</strong>
+            <span>{publication?.difference.fields.length ? publication.difference.fields.join(" · ") : "No content differences"}</span>
+          </div>
+        </div>
+        <div class="publication-states" aria-label="Draft and publication states">
+          <article><span class="state-symbol" aria-hidden="true">D</span><div><p>Mutable Draft</p><strong>Version {draft?.draft_version ?? "—"}</strong><small>{draft?.nodes.length ?? 0} node · editable history</small></div></article>
+          <article data-testid="current-publication"><span class="state-symbol published" aria-hidden="true">P</span><div><p>Current Published</p><strong>{publication?.current_published ? `Revision ${publication.current_published.sequence}` : "None yet"}</strong><small>{publication?.current_published ? shortIdentity(publication.current_published.revision_digest) : "Compile Preview required"}</small></div></article>
+          <article data-testid="newer-history"><span class="state-symbol history" aria-hidden="true">H</span><div><p>Retained History</p><strong>{newerCount} newer</strong><small>{publication?.revisions.length ?? 0} immutable revision{publication?.revisions.length === 1 ? "" : "s"}</small></div></article>
+        </div>
+        {publication?.current_event && <p class="signature-line" data-testid="signature-identity"><span aria-hidden="true">✓</span><strong>{publication.current_event.envelope.kind === "rollback" ? "Signed rollback" : "Published event"}</strong> · Ed25519 verified · <code>{shortIdentity(publication.current_event.signature.key_id)}</code></p>}
+        <div class="publication-actions">
+          <button data-testid="compile-preview" type="button" disabled={!canWrite || !queueReady || publicationBusy} onClick={() => void runCompilePreview().catch(showError)}>Compile Preview</button>
+          <button class="publish-button" data-testid="publish-revision" type="button" disabled={!canPublish} onClick={() => void publishRevision().catch(showError)}>Publish signed Revision</button>
+          <p>{!canWrite ? "Read-only tabs cannot compile or publish." : hasUnsavedAnnotation ? "Save the annotation before compiling." : pendingCount > 0 ? `Reconcile ${pendingCount} pending command first.` : compilePreview ? "Preview is bound to this exact Draft Version." : "Nothing is published until you review a full Compile Preview."}</p>
+        </div>
+        {compilePreview && <section class="compile-result" data-testid="compile-diagnostics" aria-labelledby="diagnostics-title">
+          <div class="compile-summary"><div><p class="eyebrow">Compile result</p><h4 id="diagnostics-title">{compilePreview.can_publish ? "Ready after review" : "Blocked by errors"}</h4></div><dl><div><dt>Compiler</dt><dd>{compilePreview.compiler_abi}</dd></div><div><dt>Plan format</dt><dd>{compilePreview.plan_format}</dd></div><div><dt>Input</dt><dd><code>{shortIdentity(compilePreview.compile_input_digest)}</code></dd></div><div><dt>Plan</dt><dd><code>{compilePreview.plan_digest ? shortIdentity(compilePreview.plan_digest) : "not emitted"}</code></dd></div></dl></div>
+          <ul class="diagnostic-list">{compilePreview.diagnostics.length ? compilePreview.diagnostics.map((diagnostic) => <li class={diagnostic.severity} key={diagnostic.fingerprint}><div><strong>{diagnostic.code}</strong><span>{diagnostic.severity}</span></div><p>{diagnostic.message}</p><code>{diagnostic.subject}</code>{diagnostic.requires_ack && <label class="warning-ack"><input data-testid={`ack-${diagnostic.code}`} type="checkbox" checked={acknowledged.includes(diagnostic.fingerprint)} onChange={(event) => toggleAcknowledgement(diagnostic.fingerprint, event.currentTarget.checked)} /><span>I reviewed this warning for Draft Version {compilePreview.draft_version}.</span></label>}</li>) : <li class="clean"><strong>No diagnostics</strong><p>The exact input passed all compiler checks.</p></li>}</ul>
+        </section>}
+        <section class="revision-history" data-testid="revision-history" aria-labelledby="history-title"><div class="history-heading"><div><p class="eyebrow">Append-only record</p><h4 id="history-title">Revision history</h4></div><span>{publication?.revisions.length ?? 0} total</span></div>
+          {publication?.revisions.length ? <ol>{[...publication.revisions].reverse().map((revision) => <li key={revision.revision_id}><div><strong>Revision {revision.sequence}</strong><span>{revision.is_current ? "Current" : revision.is_newer_than_current ? "Newer history" : "Preceding"}</span><small>Draft Version {revision.source_draft_version} · <code>{shortIdentity(revision.revision_digest)}</code></small></div>{publication.current_published && revision.sequence < publication.current_published.sequence && <button data-testid={`rollback-revision-${revision.sequence}`} type="button" disabled={!canWrite || !queueReady || publicationBusy} onClick={() => void rollbackRevision(revision).catch(showError)}>Roll back to Revision {revision.sequence}</button>}</li>)}</ol> : <p class="empty-history">No Published Revision yet. The Mutable Draft remains the only state.</p>}
+        </section>
+      </section>
       {forks.filter((fork) => fork.status === "open").map((fork) => <article class="recovery-fork" data-testid="recovery-fork" key={fork.fork_id}><h3>Recovery fork</h3><p>Base {fork.diff.base_draft_version} → current {fork.diff.current_draft_version}; authority changed: {String(fork.diff.authority_changed)}</p><pre>{JSON.stringify(fork.pending_operation, null, 2)}</pre><button data-testid="apply-fork" disabled={!canWrite} onClick={() => void applyFork(fork).catch(showError)}>Apply recovered work</button></article>)}
     </section>}
     {snapshot.error && <p role="alert" class="error">Daemon connection failed: {snapshot.error}</p>}<footer>Placeholder identity · independently authored · no third-party editor assets</footer>
   </main>;
 }
 function tabLabel(id: string): string { return `Editor tab ${id.slice(-6)}`; }
+function shortIdentity(value: string): string {
+  const [algorithm, identity = value] = value.split(":", 2);
+  return `${algorithm}:${identity.slice(0, 12)}…${identity.slice(-6)}`;
+}
 render(<App />, document.getElementById("app")!);
