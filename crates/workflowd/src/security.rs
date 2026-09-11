@@ -90,6 +90,11 @@ pub struct WrappedPublicationSeed {
     pub ciphertext: Vec<u8>,
 }
 
+pub struct WrappedSecret {
+    pub nonce: [u8; 24],
+    pub ciphertext: Vec<u8>,
+}
+
 pub struct SecurityService {
     database: PathBuf,
     master_key: Option<Zeroizing<[u8; 32]>>,
@@ -102,6 +107,20 @@ pub struct SecurityService {
 }
 
 impl SecurityService {
+    #[cfg(test)]
+    pub(crate) fn initialize_for_test(state: &Path) -> Self {
+        Self {
+            database: state.join("workflow.sqlite3"),
+            master_key: Some(Zeroizing::new([0x5a; 32])),
+            origin: "http://127.0.0.1:8787".into(),
+            ttl: 3600,
+            max_failures: 3,
+            argon_memory: 8192,
+            argon_iterations: 1,
+            recovery: AtomicU8::new(1),
+        }
+    }
+
     pub fn initialize(state: &Path, config: &ServeConfig) -> Result<Self, AppError> {
         let database = state.join("workflow.sqlite3");
         let master_key = read_master_key(config.master_key_file.as_deref())?;
@@ -425,6 +444,67 @@ impl SecurityService {
             .map_err(sec_internal)?;
         Ok(events)
     }
+    pub fn wrap_secret(
+        &self,
+        context: &str,
+        identity: &str,
+        plaintext: &[u8],
+    ) -> Result<WrappedSecret, SecurityError> {
+        if self.recovery.load(Ordering::Relaxed) == 0 {
+            return Err(SecurityError::Unauthorized);
+        }
+        let master = self
+            .master_key
+            .as_ref()
+            .ok_or_else(|| SecurityError::Internal("master key is unavailable".into()))?;
+        let mut nonce = [0_u8; 24];
+        OsRng.fill_bytes(&mut nonce);
+        let cipher = XChaCha20Poly1305::new_from_slice(master.as_ref())
+            .map_err(|_| SecurityError::Internal("secret wrapping cipher".into()))?;
+        let aad = format!("canopy:wrapped-secret:v1\0{context}\0{identity}");
+        let ciphertext = cipher
+            .encrypt(
+                XNonce::from_slice(&nonce),
+                chacha20poly1305::aead::Payload {
+                    msg: plaintext,
+                    aad: aad.as_bytes(),
+                },
+            )
+            .map_err(|_| SecurityError::Internal("secret wrapping failed".into()))?;
+        Ok(WrappedSecret { nonce, ciphertext })
+    }
+
+    pub fn unwrap_secret(
+        &self,
+        context: &str,
+        identity: &str,
+        nonce: &[u8],
+        ciphertext: &[u8],
+    ) -> Result<Zeroizing<Vec<u8>>, SecurityError> {
+        if nonce.len() != 24 {
+            return Err(SecurityError::Internal(
+                "secret wrapping nonce has invalid length".into(),
+            ));
+        }
+        let master = self
+            .master_key
+            .as_ref()
+            .ok_or_else(|| SecurityError::Internal("master key is unavailable".into()))?;
+        let cipher = XChaCha20Poly1305::new_from_slice(master.as_ref())
+            .map_err(|_| SecurityError::Internal("secret wrapping cipher".into()))?;
+        let aad = format!("canopy:wrapped-secret:v1\0{context}\0{identity}");
+        cipher
+            .decrypt(
+                XNonce::from_slice(nonce),
+                chacha20poly1305::aead::Payload {
+                    msg: ciphertext,
+                    aad: aad.as_bytes(),
+                },
+            )
+            .map(Zeroizing::new)
+            .map_err(|_| SecurityError::Internal("secret unwrapping failed".into()))
+    }
+
     pub fn wrap_publication_seed(
         &self,
         key_id: &str,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 use crate::{
-    assets,
+    artifact::ArtifactService,
+    artifact_http, assets,
     cgroup::ResourceIdentity,
     database::{DatabaseIdentity, DatabaseWorker},
     draft::DraftService,
@@ -27,6 +28,7 @@ pub struct AppState {
     pub resources: ResourceIdentity,
     pub release: ReleaseIdentity,
     pub security: Arc<SecurityService>,
+    pub artifacts: Arc<ArtifactService>,
     pub drafts: Arc<DraftService>,
     pub publications: Arc<PublicationService>,
     pub runs: Arc<RunService>,
@@ -65,6 +67,19 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/v1/audit", get(owner_http::audit))
         .route("/api/v1/catalog", get(draft_http::catalog))
+        .route("/api/v1/artifacts", post(artifact_http::upload))
+        .route(
+            "/api/v1/artifacts/{artifact_id}",
+            get(artifact_http::metadata),
+        )
+        .route(
+            "/api/v1/artifacts/{artifact_id}/preview",
+            get(artifact_http::preview),
+        )
+        .route(
+            "/api/v1/artifacts/{artifact_id}/content",
+            get(artifact_http::content),
+        )
         .route(
             "/api/v1/node-contracts/{namespace}/{name}/{version}",
             get(draft_http::contract),

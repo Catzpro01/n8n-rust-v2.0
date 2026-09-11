@@ -20,7 +20,7 @@ pub struct ReleaseIdentity {
 #[derive(Debug, Clone, Serialize)]
 pub struct CapabilityIdentity {
     pub api_version: &'static str,
-    pub capabilities: [&'static str; 20],
+    pub capabilities: [&'static str; 24],
     pub runtime: RuntimeIdentity,
 }
 
@@ -70,6 +70,10 @@ impl CapabilityIdentity {
                 "checkpointed-causal-trace",
                 "reconnectable-run-sse",
                 "cooperative-run-cancellation",
+                "bounded-generate-items",
+                "progressive-generate-checkpoints",
+                "encrypted-owner-artifacts",
+                "authorized-artifact-content",
             ],
             runtime: RuntimeIdentity {
                 tokio_core_workers: TOKIO_CORE_WORKERS,

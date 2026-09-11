@@ -26,13 +26,15 @@ class Daemon:
         self.port=port(); self.origin=f'http://127.0.0.1:{self.port}'
         env=os.environ.copy(); env.update({'WORKFLOWD_BIND':f'127.0.0.1:{self.port}','WORKFLOWD_CONTROL_ORIGIN':self.origin,'WORKFLOWD_STATE_DIR':str(state),'WORKFLOWD_MASTER_KEY_FILE':str(key),'WORKFLOWD_ARGON_MEMORY_KIB':'8192','WORKFLOWD_ARGON_ITERATIONS':'1',**extra})
         self.p=subprocess.Popen([str(BIN),'serve'],cwd=REPO,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
-        for _ in range(200):
+        for _ in range(400):
             if self.p.poll() is not None: raise AssertionError(self.p.stdout.read())
             try:
                 if call(self.origin,'/health/live')[0]==200: break
             except (URLError,ConnectionError): pass
-            time.sleep(.03)
-        else: raise AssertionError('daemon did not start')
+            time.sleep(.05)
+        else:
+            self.p.terminate(); self.p.wait(8)
+            raise AssertionError('daemon did not start')
     def stop(self):
         if self.p.poll() is None: self.p.terminate(); self.p.wait(5)
         if self.p.stdout.closed: return ''

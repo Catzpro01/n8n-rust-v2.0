@@ -13,8 +13,10 @@ repository = "https://github.com/Catzpro01/n8n-rust-v2.0"
 [workspace.dependencies]
 argon2 = "=0.5.3"
 base64 = "=0.22.1"
+blake3 = { version = "=1.8.7", default-features = false, features = ["std"] }
 chacha20poly1305 = "=0.10.1"
 ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["alloc", "signature", "zeroize"] }
+futures-util = { version = "=0.3.34", default-features = false }
 rand_core = { version = "=0.6.4", features = ["getrandom"] }
 subtle = "=2.6.1"
 zeroize = "=1.9.0"

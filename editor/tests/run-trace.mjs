@@ -99,6 +99,7 @@ try {
 
   // A second Run is cancelled while durably queued; terminal history is explicit and immutable.
   await page.getByTestId("start-run").click();
+  await waitNotText(page.getByTestId("run-id"), firstRunId);
   await page.getByTestId("cancel-run").waitFor();
   await page.getByTestId("cancel-run").click();
   await waitAttribute(page.getByTestId("run-durable-state"), "data-state", "cancelled");
@@ -156,13 +157,13 @@ async function freePort() {
   return port;
 }
 async function ready(origin) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
     try {
       if ((await fetch(`${origin}/health/live`)).ok) return;
     } catch {
       // Startup race.
     }
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("daemon did not start");
 }
@@ -172,6 +173,13 @@ async function waitText(locator, text) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error(`expected ${text}: ${await locator.textContent()}`);
+}
+async function waitNotText(locator, text) {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
+    if ((await locator.textContent())?.trim() !== text) return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`expected text to change from ${text}`);
 }
 async function waitAttribute(locator, name, value) {
   for (let attempt = 0; attempt < 150; attempt += 1) {

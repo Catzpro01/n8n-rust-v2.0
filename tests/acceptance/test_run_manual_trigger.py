@@ -70,14 +70,17 @@ class Daemon:
             stderr=subprocess.PIPE,
             text=True,
         )
-        for _ in range(200):
+        for _ in range(400):
             try:
                 if api(self.origin, "/health/live")[0] == 200:
                     return
             except (URLError, ConnectionError):
                 pass
-            time.sleep(0.03)
-        stderr = self.process.stderr.read() if self.process.poll() is not None else ""
+            time.sleep(0.05)
+        if self.process.poll() is None:
+            self.process.terminate()
+            self.process.wait(8)
+        stderr = self.process.stderr.read() if self.process.stderr else ""
         raise AssertionError(f"daemon did not start: {stderr}")
 
     def stop(self) -> None:

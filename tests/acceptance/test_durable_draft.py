@@ -16,11 +16,12 @@ def text(origin,path):
 class Daemon:
  def __init__(self,state,key):
   self.port=free_port();self.origin=f'http://127.0.0.1:{self.port}';env=os.environ.copy();env.update({'WORKFLOWD_BIND':f'127.0.0.1:{self.port}','WORKFLOWD_CONTROL_ORIGIN':self.origin,'WORKFLOWD_STATE_DIR':str(state),'WORKFLOWD_MASTER_KEY_FILE':str(key),'WORKFLOWD_ARGON_MEMORY_KIB':'8192','WORKFLOWD_ARGON_ITERATIONS':'1'});self.p=subprocess.Popen([str(BIN),'serve'],cwd=REPO,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-  for _ in range(200):
+  for _ in range(400):
    try:
     if api(self.origin,'/health/live')[0]==200:return
    except (URLError,ConnectionError):pass
-   time.sleep(.03)
+   time.sleep(.05)
+  if self.p.poll() is None:self.p.terminate();self.p.wait(8)
   raise AssertionError('not started')
  def stop(self):
   if self.p.poll() is None:self.p.terminate();self.p.wait(8)

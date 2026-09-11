@@ -153,25 +153,36 @@ pub fn publication_policy() -> CompilerPolicy {
     }
 }
 
+fn native_contracts() -> Result<Vec<Value>, String> {
+    [
+        (
+            "Manual Trigger",
+            include_str!("../../../contracts/manual-trigger.v1alpha1.json"),
+        ),
+        (
+            "Generate Items",
+            include_str!("../../../contracts/generate-items.v1alpha1.json"),
+        ),
+    ]
+    .into_iter()
+    .map(|(name, source)| {
+        serde_json::from_str(source)
+            .map_err(|error| format!("embedded {name} contract is invalid: {error}"))
+    })
+    .collect()
+}
+
 pub fn compile(draft: WorkflowDraft) -> Result<CompileResult, String> {
-    let contract: Value = serde_json::from_str(include_str!(
-        "../../../contracts/manual-trigger.v1alpha1.json"
-    ))
-    .map_err(|error| format!("embedded Manual Trigger contract is invalid: {error}"))?;
     compile_with_inputs(
         draft,
-        vec![contract],
+        native_contracts()?,
         native_profile(),
         publication_policy(),
     )
 }
 
 pub fn compile_input_digest(draft: &WorkflowDraft) -> Result<String, String> {
-    let contract: Value = serde_json::from_str(include_str!(
-        "../../../contracts/manual-trigger.v1alpha1.json"
-    ))
-    .map_err(|error| format!("embedded Manual Trigger contract is invalid: {error}"))?;
-    let contracts = vec![contract];
+    let contracts = native_contracts()?;
     let compatibility_profile = native_profile();
     let policy = publication_policy();
     let revision = RevisionPayload {
@@ -387,9 +398,39 @@ fn validate_configuration(
     node: &crate::draft::NodeInstance,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<(), String> {
-    let valid = node.configuration.as_object().is_some_and(|object| {
-        object.len() == 1 && object.get("capture_mode") == Some(&json!("manual"))
-    });
+    let valid = match node.contract_lock.name.as_str() {
+        "manual-trigger" => node.configuration.as_object().is_some_and(|object| {
+            object.len() == 1 && object.get("capture_mode") == Some(&json!("manual"))
+        }),
+        "generate-items" => node.configuration.as_object().is_some_and(|object| {
+            if object.len() != 5
+                || !matches!(
+                    object.get("storage_mode").and_then(Value::as_str),
+                    Some("auto" | "artifact")
+                )
+            {
+                return false;
+            }
+            let Some(count) = object.get("count").and_then(Value::as_u64) else {
+                return false;
+            };
+            let Some(start) = object.get("start").and_then(Value::as_i64) else {
+                return false;
+            };
+            let Some(step) = object.get("step").and_then(Value::as_i64) else {
+                return false;
+            };
+            object.contains_key("data")
+                && count <= 50_000
+                && (count == 0
+                    || i64::try_from(count - 1)
+                        .ok()
+                        .and_then(|ordinal| step.checked_mul(ordinal))
+                        .and_then(|delta| start.checked_add(delta))
+                        .is_some())
+        }),
+        _ => false,
+    };
     if !valid {
         push(
             diagnostics,
@@ -397,7 +438,7 @@ fn validate_configuration(
             "error",
             format!("node:{}", node.id),
             "The node configuration does not satisfy the locked schema.",
-            json!({"path": "configuration", "expected": {"capture_mode": "manual"}}),
+            json!({"path": "configuration", "contract": node.contract_lock.name}),
             false,
         )?;
     }

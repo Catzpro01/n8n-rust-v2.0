@@ -74,13 +74,16 @@ class Daemon:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        for _ in range(200):
+        for _ in range(400):
             try:
                 if api(self.origin, "/health/live")[0] == 200:
                     return
             except (URLError, ConnectionError):
                 pass
-            time.sleep(0.03)
+            time.sleep(0.05)
+        if self.process.poll() is None:
+            self.process.terminate()
+            self.process.wait(8)
         raise AssertionError("daemon did not start")
 
     def stop(self) -> None:

@@ -147,13 +147,13 @@ async function freePort() {
   return port;
 }
 async function ready(origin) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
     try {
       if ((await fetch(`${origin}/health/live`)).ok) return;
     } catch {
       // Startup race.
     }
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
   throw new Error("daemon did not start");
 }

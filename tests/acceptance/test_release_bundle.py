@@ -38,6 +38,15 @@ class ReleaseBundleAcceptanceTest(unittest.TestCase):
         self.assertIn(
             "usr/share/workflowd/contracts/manual-trigger.v1alpha1.json", relative
         )
+        self.assertIn(
+            "usr/share/workflowd/contracts/generate-items.v1alpha1.json", relative
+        )
+        generate_contract = json.loads(
+            (BUNDLE / "usr/share/workflowd/contracts/generate-items.v1alpha1.json").read_text()
+        )
+        self.assertEqual(generate_contract["identity"]["name"], "generate-items")
+        self.assertEqual(generate_contract["resources"]["hard"]["output_count"], 50_000)
+        self.assertEqual(generate_contract["resources"]["hard"]["output_bytes"], 64 * 1024 * 1024)
 
         forbidden_suffixes = (".rs", ".tsx", ".ts", ".mjs", ".map", ".pyc")
         self.assertFalse([name for name in relative if name.endswith(forbidden_suffixes)])

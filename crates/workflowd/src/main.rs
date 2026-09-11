@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 mod app;
+mod artifact;
+mod artifact_http;
 mod assets;
 mod canonical;
 mod cgroup;
@@ -10,6 +12,7 @@ mod database;
 mod draft;
 mod draft_http;
 mod error;
+mod generate_engine;
 mod identity;
 mod owner_http;
 mod publication;
@@ -74,6 +77,10 @@ fn serve() -> Result<(), AppError> {
         &config.state_dir,
         &config,
     )?);
+    let artifacts = Arc::new(
+        artifact::ArtifactService::initialize(&config.state_dir, security.clone())
+            .map_err(|error| AppError::Database(format!("Artifact schema: {error}")))?,
+    );
     let drafts = Arc::new(
         draft::DraftService::initialize(&config)
             .map_err(|error| AppError::Database(format!("draft schema: {error}")))?,
@@ -83,7 +90,7 @@ fn serve() -> Result<(), AppError> {
             .map_err(|error| AppError::Database(format!("publication schema: {error}")))?,
     );
     let runs = Arc::new(
-        run::RunService::initialize(&config)
+        run::RunService::initialize(&config, artifacts.clone())
             .map_err(|error| AppError::Database(format!("Run schema: {error}")))?,
     );
     let state = AppState {
@@ -92,6 +99,7 @@ fn serve() -> Result<(), AppError> {
         database: database_identity,
         resources: cgroup::discover(config.cgroup_dir.as_deref()),
         security,
+        artifacts,
         drafts,
         publications,
         runs,

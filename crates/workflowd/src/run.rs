@@ -1,9 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use crate::{
+    artifact::{ArtifactError, ArtifactReference, ArtifactService},
     canonical::{bytes as canonical_bytes, digest, CANONICALIZATION, DIGEST_ALGORITHM},
     compiler::ExecutionPlan,
     config::ServeConfig,
+    generate_engine::{
+        self, GenerateFailure, GenerateResume, GenerateSession, GenerateStart, GenerateSummary,
+        GeneratedEnvelope,
+    },
     run_engine::{self, ActivationOutcome, ManualActivationInput, ManualActivationResult},
 };
 use rand_core::{OsRng, RngCore};
@@ -41,6 +46,10 @@ pub const MAX_SSE_SUBSCRIBERS: usize = 32;
 pub const SUBSCRIBER_QUEUE_COUNT: usize = 64;
 pub const SUBSCRIBER_QUEUE_BYTES: usize = 256 * 1024;
 pub const MAX_INVOCATION_BYTES: usize = 8 * 1024;
+pub const ENVELOPE_QUEUE_COUNT: usize = 256;
+pub const ENVELOPE_QUEUE_BYTES: usize = 4 * 1024 * 1024;
+pub const ENVELOPE_MICRO_BATCH_COUNT: usize = 64;
+const ENVELOPE_BATCH_SLOTS: usize = ENVELOPE_QUEUE_COUNT / ENVELOPE_MICRO_BATCH_COUNT;
 pub const CHECKPOINT_MAX_OUTCOMES: usize = 1_024;
 pub const CHECKPOINT_MAX_BYTES: usize = 1024 * 1024;
 pub const CHECKPOINT_MAX_LATENCY_MILLIS: u64 = 250;
@@ -96,6 +105,8 @@ pub struct RunView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub live: Option<LiveProgress>,
     pub correctness: CorrectnessView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub generation: Option<GenerationProgress>,
     pub admitted_at: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub started_at: Option<i64>,
@@ -136,11 +147,23 @@ pub struct CorrectnessView {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenerationProgress {
+    pub state: String,
+    pub generated_count: u64,
+    pub logical_bytes: u64,
+    pub stream_digest: String,
+    pub backpressure_events: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifact: Option<ArtifactReference>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QueueProfileView {
     pub profile: String,
     pub maximum_nonterminal_runs: usize,
     pub maximum_hot_runs: usize,
     pub ready: QueueLimitView,
+    pub envelopes: QueueLimitView,
     pub results: QueueLimitView,
     pub writer: QueueLimitView,
     pub live_ring_per_run: QueueLimitView,
@@ -275,7 +298,10 @@ pub struct RunService {
 }
 
 impl RunService {
-    pub fn initialize(config: &ServeConfig) -> Result<Self, String> {
+    pub fn initialize(
+        config: &ServeConfig,
+        artifacts: Arc<ArtifactService>,
+    ) -> Result<Self, String> {
         let database = config.state_dir.join("workflow.sqlite3");
         let (writer, writer_thread) = start_writer(database.clone())?;
         let live = Arc::new(LiveHub::new());
@@ -284,9 +310,10 @@ impl RunService {
         let result_budget = Arc::new(ByteBudget::new(RESULT_QUEUE_BYTES));
         let (ready_sender, ready_receiver) = mpsc::sync_channel(READY_QUEUE_COUNT);
         let (result_sender, result_receiver) = mpsc::sync_channel(RESULT_QUEUE_COUNT);
+        let (envelope_sender, envelope_receiver) = mpsc::sync_channel(ENVELOPE_BATCH_SLOTS);
         let (wake_sender, wake_receiver) = mpsc::sync_channel(1);
 
-        let executor_thread = start_executor(ready_receiver, result_sender)?;
+        let executor_thread = start_executor(ready_receiver, result_sender, envelope_sender)?;
         let scheduler_thread = start_scheduler(SchedulerContext {
             database: database.clone(),
             writer: writer.clone(),
@@ -294,7 +321,9 @@ impl RunService {
             ready_budget,
             result_budget,
             results: result_receiver,
+            envelopes: envelope_receiver,
             wake: wake_receiver,
+            artifacts: artifacts.clone(),
             controls: controls.clone(),
             live: live.clone(),
         })?;
@@ -503,7 +532,14 @@ enum WriterOperation {
         request: CancelRunRequest,
         active: bool,
     },
+    GenerationProgress(GeneratedProgressCommit),
+    PreparationFailed {
+        run_id: String,
+        reason: String,
+        suspended: bool,
+    },
     Complete(CompletedWork),
+    CompleteGenerated(CompletedGeneratedWork),
     Stop,
 }
 
@@ -543,6 +579,12 @@ fn start_writer(database: PathBuf) -> Result<(WriterClient, JoinHandle<()>), Str
             let opened = connect(&database).and_then(|mut connection| {
                 initialize_schema(&connection)?;
                 recover_cancellations(&mut connection)?;
+                // ArtifactService initialization and startup reconciliation completed before
+                // RunService starts. That successful boot is the revalidation barrier for
+                // work that was durably suspended by transient storage pressure.
+                connection
+                    .execute("DELETE FROM run_suspensions", [])
+                    .map_err(|error| error.to_string())?;
                 Ok(connection)
             });
             match opened {
@@ -600,8 +642,20 @@ fn handle_writer_operation(
         } => {
             cancel_transaction(connection, &run_id, request, active).map(WriterReply::Cancellation)
         }
+        WriterOperation::GenerationProgress(progress) => {
+            generation_progress_transaction(connection, progress).map(WriterReply::Run)
+        }
+        WriterOperation::PreparationFailed {
+            run_id,
+            reason,
+            suspended,
+        } => preparation_failed_transaction(connection, &run_id, &reason, suspended)
+            .map(WriterReply::Run),
         WriterOperation::Complete(result) => {
             complete_transaction(connection, result).map(WriterReply::Run)
+        }
+        WriterOperation::CompleteGenerated(result) => {
+            complete_generated_transaction(connection, result).map(WriterReply::Run)
         }
         WriterOperation::Stop => Ok(WriterReply::Stopped),
     }
@@ -684,6 +738,23 @@ fn initialize_schema(connection: &Connection) -> Result<(), String> {
                 checkpoint_hash TEXT NOT NULL,
                 committed_at INTEGER NOT NULL,
                 PRIMARY KEY(run_id,checkpoint_sequence)
+            ) STRICT;
+            CREATE TABLE IF NOT EXISTS run_generation_progress(
+                run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+                state TEXT NOT NULL CHECK(state IN ('running','succeeded','failed','cancelled','suspended')),
+                generated_count INTEGER NOT NULL,
+                logical_bytes INTEGER NOT NULL,
+                stream_digest TEXT NOT NULL,
+                backpressure_events INTEGER NOT NULL,
+                backpressure_micros INTEGER NOT NULL,
+                artifact_json TEXT,
+                updated_at INTEGER NOT NULL
+            ) STRICT;
+            CREATE TABLE IF NOT EXISTS run_suspensions(
+                run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+                code TEXT NOT NULL,
+                safe_message TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
             ) STRICT;
             CREATE TRIGGER IF NOT EXISTS immutable_run_activations_update
                 BEFORE UPDATE ON run_activations BEGIN
@@ -984,6 +1055,12 @@ fn cancel_transaction(
             ],
         )
         .map_err(storage_error)?;
+    transaction
+        .execute(
+            "DELETE FROM run_suspensions WHERE run_id=?1",
+            params![run_id],
+        )
+        .map_err(storage_error)?;
     let run = load_run(&transaction, run_id)?;
     transaction.commit().map_err(storage_error)?;
     Ok(CancellationResult {
@@ -991,6 +1068,540 @@ fn cancel_transaction(
         already_terminal: false,
         run,
     })
+}
+
+fn preparation_failed_transaction(
+    connection: &mut Connection,
+    run_id: &str,
+    reason: &str,
+    suspended: bool,
+) -> Result<RunView, RunError> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(storage_error)?;
+    let current = load_run(&transaction, run_id)?;
+    if current.durable.terminal || (suspended && current.durable.state == "suspended") {
+        transaction.commit().map_err(storage_error)?;
+        return Ok(current);
+    }
+    if current.durable.state == "cancel_requested" {
+        transaction.commit().map_err(storage_error)?;
+        finalize_requested_cancellation(
+            connection,
+            run_id,
+            "cancellation_settled_after_preparation",
+            "artifact_preparation_ended_after_durable_cancellation",
+        )?;
+        return load_run(connection, run_id);
+    }
+    let checkpoint = current.durable.checkpoint_sequence + 1;
+    let committed_at = now_millis();
+    let state = if suspended { "suspended" } else { "failed" };
+    let code = if suspended {
+        "canopy.generate-items.artifact_storage_pressure"
+    } else {
+        "canopy.generate-items.artifact_preparation_failed"
+    };
+    let safe_message = if suspended {
+        "Artifact storage is temporarily unavailable; the Run is durably suspended."
+    } else {
+        "The configured Artifact could not be safely prepared."
+    };
+    let event = make_trace_event(
+        run_id,
+        next_trace_sequence(&transaction, run_id)?,
+        Some(1),
+        checkpoint,
+        "physical",
+        if suspended {
+            "run_durably_suspended"
+        } else {
+            "artifact_preparation_failed"
+        },
+        json!({"state":state,"code":code,"safe_message":safe_message}),
+        &current_trace_head(&transaction, run_id)?,
+        committed_at,
+    )?;
+    insert_trace_event(&transaction, &event)?;
+    let generated_count = current
+        .generation
+        .as_ref()
+        .map_or(0, |progress| progress.generated_count);
+    let logical_bytes = current
+        .generation
+        .as_ref()
+        .map_or(0, |progress| progress.logical_bytes);
+    let stream_digest = current.generation.as_ref().map_or_else(
+        || "genesis".into(),
+        |progress| progress.stream_digest.clone(),
+    );
+    let snapshot = json!({
+        "state":state,
+        "resume":{"generate_next_ordinal":generated_count},
+        "generated_count":generated_count,
+        "logical_bytes":logical_bytes,
+        "stream_digest":stream_digest,
+        "failure":{"code":code,"message":safe_message},
+        "complete":false
+    });
+    insert_checkpoint(
+        &transaction,
+        run_id,
+        checkpoint,
+        state,
+        current.durable.logical_order,
+        &snapshot,
+        &event.event_hash,
+        committed_at,
+    )?;
+    if suspended {
+        transaction
+            .execute(
+                "INSERT INTO run_suspensions(run_id,code,safe_message,updated_at) VALUES(?1,?2,?3,?4)
+                 ON CONFLICT(run_id) DO UPDATE SET code=excluded.code,safe_message=excluded.safe_message,updated_at=excluded.updated_at",
+                params![run_id, code, safe_message, committed_at],
+            )
+            .map_err(storage_error)?;
+        transaction
+            .execute(
+                "UPDATE runs SET checkpoint_sequence=?2,trace_head_hash=?3,updated_at=?4 WHERE run_id=?1 AND state='queued'",
+                params![run_id, checkpoint as i64, event.event_hash, committed_at],
+            )
+            .map_err(storage_error)?;
+    } else {
+        let correctness_digest = digest(&json!({
+            "schema":"canopy.correctness-digest/v1alpha1",
+            "revision_digest":current.revision_digest,
+            "plan_digest":current.plan_digest,
+            "complete":false,
+            "failure_code":code
+        }))
+        .map_err(RunError::Integrity)?;
+        transaction
+            .execute(
+                "DELETE FROM run_suspensions WHERE run_id=?1",
+                params![run_id],
+            )
+            .map_err(storage_error)?;
+        transaction
+            .execute(
+                "UPDATE runs SET state='failed',checkpoint_sequence=?2,attempted=1,failed=1,correctness_digest=?3,digest_complete=0,trace_head_hash=?4,updated_at=?5,terminal_at=?5 WHERE run_id=?1 AND state='queued'",
+                params![run_id, checkpoint as i64, correctness_digest, event.event_hash, committed_at],
+            )
+            .map_err(storage_error)?;
+    }
+    let run = load_run(&transaction, run_id)?;
+    transaction.commit().map_err(storage_error)?;
+    if !suspended {
+        warn!(event = "run_artifact_permanent_failure", run_id, reason);
+    }
+    Ok(run)
+}
+
+fn generation_progress_transaction(
+    connection: &mut Connection,
+    progress: GeneratedProgressCommit,
+) -> Result<RunView, RunError> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(storage_error)?;
+    let current = load_run(&transaction, &progress.run_id)?;
+    if current.durable.terminal || current.durable.state == "cancel_requested" {
+        transaction.commit().map_err(storage_error)?;
+        return Ok(current);
+    }
+    if progress.generated_count != progress.last_ordinal.saturating_add(1)
+        || progress.first_ordinal > progress.last_ordinal
+    {
+        return Err(RunError::Integrity(
+            "Generate checkpoint ordinal range is inconsistent".into(),
+        ));
+    }
+    let durable_count = current
+        .generation
+        .as_ref()
+        .map_or(0, |durable| durable.generated_count);
+    if progress.generated_count <= durable_count {
+        transaction.commit().map_err(storage_error)?;
+        return Ok(current);
+    }
+    if progress.first_ordinal != durable_count {
+        return Err(RunError::Integrity(
+            "Generate checkpoint is not contiguous with its durable cursor".into(),
+        ));
+    }
+    if let Some(durable) = &current.generation {
+        if progress.logical_bytes < durable.logical_bytes {
+            return Err(RunError::Integrity(
+                "Generate checkpoint logical bytes regressed".into(),
+            ));
+        }
+    }
+    let checkpoint = current.durable.checkpoint_sequence + 1;
+    let committed_at = now_millis();
+    let mut previous_hash = current_trace_head(&transaction, &progress.run_id)?;
+    let mut sequence = next_trace_sequence(&transaction, &progress.run_id)?;
+    if current.durable.logical_order == 0 {
+        let plan = load_execution_plan(&transaction, &progress.run_id)?;
+        let manual_node = plan
+            .nodes
+            .iter()
+            .find(|node| node.contract_lock.name == "manual-trigger")
+            .ok_or_else(|| RunError::Integrity("Pinned Manual Trigger is missing".into()))?
+            .node_instance_id
+            .clone();
+        let input_text: String = transaction
+            .query_row(
+                "SELECT captured_invocation_json FROM runs WHERE run_id=?1",
+                params![progress.run_id],
+                |row| row.get(0),
+            )
+            .map_err(storage_error)?;
+        let input: Value = serde_json::from_str(&input_text).map_err(|error| {
+            RunError::Integrity(format!("captured invocation is invalid: {error}"))
+        })?;
+        let activation_id = generated_activation_id(&progress.run_id, &manual_node, 1);
+        insert_activation_row(
+            &transaction,
+            ActivationInsert {
+                activation_id: &activation_id,
+                run_id: &progress.run_id,
+                node_id: &manual_node,
+                logical_order: 1,
+                outcome: "success",
+                input: &input,
+                output: Some(&input),
+                failure: None,
+                checkpoint,
+                started_at: progress.started_at,
+                completed_at: progress.started_at,
+                elapsed_micros: 0,
+                provenance: json!({"engine_abi":generate_engine::GENERATE_ENGINE_ABI,"lane":"native-cpu","effect_class":"pure","output_port":"invocation"}),
+            },
+        )?;
+        let manual_event = make_trace_event(
+            &progress.run_id,
+            sequence,
+            Some(1),
+            checkpoint,
+            "logical",
+            "activation_outcome",
+            json!({
+                "activation_id":activation_id,"node_instance_id":manual_node,"attempt":1,
+                "outcome":"success","input_digest":digest(&input).map_err(RunError::Integrity)?,
+                "output_digest":digest(&input).map_err(RunError::Integrity)?
+            }),
+            &previous_hash,
+            committed_at,
+        )?;
+        insert_trace_event(&transaction, &manual_event)?;
+        previous_hash = manual_event.event_hash;
+        sequence += 1;
+    }
+    let event = make_trace_event(
+        &progress.run_id,
+        sequence,
+        Some(2),
+        checkpoint,
+        "physical",
+        "generation_checkpoint",
+        json!({
+            "generated_count":progress.generated_count,
+            "logical_bytes":progress.logical_bytes,
+            "stream_digest":progress.stream_digest,
+            "contiguous_ordinal_range":[progress.first_ordinal,progress.last_ordinal],
+            "backpressure_events":progress.backpressure_events,
+            "backpressure_micros":progress.backpressure_micros,
+            "artifact":progress.artifact
+        }),
+        &previous_hash,
+        committed_at,
+    )?;
+    insert_trace_event(&transaction, &event)?;
+    let snapshot = json!({
+        "resume":{"generate_next_ordinal":progress.generated_count},
+        "logical_order":1,
+        "generated_count":progress.generated_count,
+        "logical_bytes":progress.logical_bytes,
+        "stream_digest":progress.stream_digest,
+        "artifact":progress.artifact,
+        "complete":false
+    });
+    insert_checkpoint(
+        &transaction,
+        &progress.run_id,
+        checkpoint,
+        "running",
+        1,
+        &snapshot,
+        &event.event_hash,
+        committed_at,
+    )?;
+    let artifact_json = progress.artifact.as_ref().map(canonical_text).transpose()?;
+    transaction.execute(
+        "INSERT INTO run_generation_progress(run_id,state,generated_count,logical_bytes,stream_digest,backpressure_events,backpressure_micros,artifact_json,updated_at)
+         VALUES(?1,'running',?2,?3,?4,?5,?6,?7,?8)
+         ON CONFLICT(run_id) DO UPDATE SET state='running',generated_count=excluded.generated_count,logical_bytes=excluded.logical_bytes,stream_digest=excluded.stream_digest,backpressure_events=excluded.backpressure_events,backpressure_micros=excluded.backpressure_micros,artifact_json=excluded.artifact_json,updated_at=excluded.updated_at",
+        params![progress.run_id,progress.generated_count as i64,progress.logical_bytes as i64,progress.stream_digest,progress.backpressure_events as i64,progress.backpressure_micros as i64,artifact_json,committed_at]
+    ).map_err(storage_error)?;
+    transaction.execute(
+        "UPDATE runs SET checkpoint_sequence=?2,logical_order=1,attempted=1,succeeded=1,output_count=?3,trace_head_hash=?4,started_at=COALESCE(started_at,?5),updated_at=?6 WHERE run_id=?1 AND state='queued'",
+        params![progress.run_id,checkpoint as i64,progress.generated_count as i64,event.event_hash,progress.started_at,committed_at]
+    ).map_err(storage_error)?;
+    let run = load_run(&transaction, &progress.run_id)?;
+    transaction.commit().map_err(storage_error)?;
+    Ok(run)
+}
+
+fn complete_generated_transaction(
+    connection: &mut Connection,
+    completed: CompletedGeneratedWork,
+) -> Result<RunView, RunError> {
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(storage_error)?;
+    let current = load_run(&transaction, &completed.run_id)?;
+    if current.durable.terminal {
+        transaction.commit().map_err(storage_error)?;
+        return Ok(current);
+    }
+    let cancel_won = current.durable.state == "cancel_requested" || completed.cancelled;
+    let (state, generate_outcome, failure, correctness_digest) = if cancel_won {
+        ("cancelled","cancelled",None,digest(&json!({
+            "schema":"canopy.correctness-digest/v1alpha1","revision_digest":current.revision_digest,
+            "plan_digest":current.plan_digest,"complete":false,"generated_count":completed.generated_count,
+            "stream_digest":completed.stream_digest,"cancelled":true
+        })).map_err(RunError::Integrity)?)
+    } else {
+        match &completed.summary {
+            Ok(summary)=>("succeeded","success",None,summary.correctness_digest.clone()),
+            Err(reason)=>("failed","permanent_failure",Some(json!({"code":reason.code,"message":reason.message})),digest(&json!({
+                "schema":"canopy.correctness-digest/v1alpha1","revision_digest":current.revision_digest,
+                "plan_digest":current.plan_digest,"complete":false,"generated_count":completed.generated_count,
+                "stream_digest":completed.stream_digest,"failure":reason
+            })).map_err(RunError::Integrity)?)
+        }
+    };
+    let checkpoint = current.durable.checkpoint_sequence + 1;
+    let committed_at = now_millis();
+    let plan = load_execution_plan(&transaction, &completed.run_id)?;
+    let manual_node = plan
+        .nodes
+        .iter()
+        .find(|node| node.contract_lock.name == "manual-trigger")
+        .map(|node| node.node_instance_id.clone())
+        .unwrap_or_else(|| "invalid-manual".into());
+    let generate_node = plan
+        .nodes
+        .iter()
+        .find(|node| node.contract_lock.name == "generate-items")
+        .map(|node| node.node_instance_id.clone())
+        .unwrap_or_else(|| "invalid-generate".into());
+    let manual_activation = generated_activation_id(&completed.run_id, &manual_node, 1);
+    let generate_activation = generated_activation_id(&completed.run_id, &generate_node, 2);
+    let manual_committed = current.durable.logical_order >= 1;
+    if !manual_committed {
+        insert_activation_row(
+            &transaction,
+            ActivationInsert {
+                activation_id: &manual_activation,
+                run_id: &completed.run_id,
+                node_id: &manual_node,
+                logical_order: 1,
+                outcome: "success",
+                input: &completed.input,
+                output: Some(&completed.input),
+                failure: None,
+                checkpoint,
+                started_at: completed.started_at,
+                completed_at: completed.started_at,
+                elapsed_micros: 0,
+                provenance: json!({"engine_abi":generate_engine::GENERATE_ENGINE_ABI,"lane":"native-cpu","effect_class":"pure","output_port":"invocation"}),
+            },
+        )?;
+    }
+    let generate_output = if state == "succeeded" {
+        Some(json!({
+            "generated_count":completed.generated_count,"logical_bytes":completed.logical_bytes,
+            "stream_digest":completed.stream_digest,"artifact":completed.artifact
+        }))
+    } else {
+        None
+    };
+    insert_activation_row(
+        &transaction,
+        ActivationInsert {
+            activation_id: &generate_activation,
+            run_id: &completed.run_id,
+            node_id: &generate_node,
+            logical_order: 2,
+            outcome: generate_outcome,
+            input: &completed.input,
+            output: generate_output.as_ref(),
+            failure: failure.as_ref(),
+            checkpoint,
+            started_at: completed.started_at,
+            completed_at: completed.completed_at,
+            elapsed_micros: completed.elapsed_micros,
+            provenance: json!({"engine_abi":generate_engine::GENERATE_ENGINE_ABI,"lane":"native-cpu","effect_class":"pure","output_port":"items","backpressure_micros":completed.backpressure_micros}),
+        },
+    )?;
+    let mut previous = current_trace_head(&transaction, &completed.run_id)?;
+    let mut sequence = next_trace_sequence(&transaction, &completed.run_id)?;
+    if !manual_committed {
+        let manual_event = make_trace_event(
+            &completed.run_id,
+            sequence,
+            Some(1),
+            checkpoint,
+            "logical",
+            "activation_outcome",
+            json!({
+                "activation_id":manual_activation,"node_instance_id":manual_node,"attempt":1,"outcome":"success",
+                "input_digest":digest(&completed.input).map_err(RunError::Integrity)?,"output_digest":digest(&completed.input).map_err(RunError::Integrity)?
+            }),
+            &previous,
+            committed_at,
+        )?;
+        insert_trace_event(&transaction, &manual_event)?;
+        previous = manual_event.event_hash;
+        sequence += 1;
+    }
+    let generate_event = make_trace_event(
+        &completed.run_id,
+        sequence,
+        Some(2),
+        checkpoint,
+        "logical",
+        "activation_outcome",
+        json!({
+            "activation_id":generate_activation,"node_instance_id":generate_node,"attempt":1,"outcome":generate_outcome,
+            "generated_count":completed.generated_count,"logical_bytes":completed.logical_bytes,"stream_digest":completed.stream_digest,
+            "artifact":completed.artifact,"failure":failure,"input_digest":digest(&completed.input).map_err(RunError::Integrity)?,
+            "output_digest":generate_output.as_ref().map(digest).transpose().map_err(RunError::Integrity)?
+        }),
+        &previous,
+        committed_at,
+    )?;
+    insert_trace_event(&transaction, &generate_event)?;
+    let checkpoint_event = make_trace_event(
+        &completed.run_id,
+        sequence + 1,
+        Some(2),
+        checkpoint,
+        "physical",
+        "checkpoint_committed",
+        json!({
+            "state":state,"logical_order":2,"generated_count":completed.generated_count,"logical_bytes":completed.logical_bytes,
+            "stream_digest":completed.stream_digest,"correctness_digest":correctness_digest,"backpressure_micros":completed.backpressure_micros,
+            "safe_resources":safe_resource_facts()
+        }),
+        &generate_event.event_hash,
+        committed_at,
+    )?;
+    insert_trace_event(&transaction, &checkpoint_event)?;
+    let attempted = 2_i64;
+    let (succeeded, cancelled, failed) = match state {
+        "succeeded" => (2, 0, 0),
+        "cancelled" => (1, 1, 0),
+        _ => (1, 0, 1),
+    };
+    let snapshot = json!({
+        "resume":{"generate_next_ordinal":completed.generated_count},"logical_order":2,"state":state,
+        "generated_count":completed.generated_count,"logical_bytes":completed.logical_bytes,"stream_digest":completed.stream_digest,
+        "correctness_digest":correctness_digest,"complete":state=="succeeded","artifact":completed.artifact,
+        "counters":{"attempted":attempted,"succeeded":succeeded,"cancelled":cancelled,"failed":failed,"output_count":completed.generated_count}
+    });
+    insert_checkpoint(
+        &transaction,
+        &completed.run_id,
+        checkpoint,
+        state,
+        2,
+        &snapshot,
+        &checkpoint_event.event_hash,
+        committed_at,
+    )?;
+    let artifact_json = completed
+        .artifact
+        .as_ref()
+        .map(canonical_text)
+        .transpose()?;
+    transaction.execute(
+        "INSERT INTO run_generation_progress(run_id,state,generated_count,logical_bytes,stream_digest,backpressure_events,backpressure_micros,artifact_json,updated_at)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)
+         ON CONFLICT(run_id) DO UPDATE SET state=excluded.state,generated_count=excluded.generated_count,logical_bytes=excluded.logical_bytes,stream_digest=excluded.stream_digest,backpressure_events=excluded.backpressure_events,backpressure_micros=excluded.backpressure_micros,artifact_json=excluded.artifact_json,updated_at=excluded.updated_at",
+        params![completed.run_id,state,completed.generated_count as i64,completed.logical_bytes as i64,completed.stream_digest,completed.backpressure_events as i64,completed.backpressure_micros as i64,artifact_json,committed_at]
+    ).map_err(storage_error)?;
+    transaction.execute(
+        "UPDATE runs SET state=?2,checkpoint_sequence=?3,logical_order=2,attempted=?4,succeeded=?5,cancelled=?6,failed=?7,output_count=?8,correctness_digest=?9,digest_complete=?10,trace_head_hash=?11,started_at=COALESCE(started_at,?12),updated_at=?13,terminal_at=?13 WHERE run_id=?1 AND state IN ('queued','cancel_requested')",
+        params![completed.run_id,state,checkpoint as i64,attempted,succeeded,cancelled,failed,completed.generated_count as i64,correctness_digest,if state=="succeeded"{1}else{0},checkpoint_event.event_hash,completed.started_at,committed_at]
+    ).map_err(storage_error)?;
+    let run = load_run(&transaction, &completed.run_id)?;
+    transaction.commit().map_err(storage_error)?;
+    Ok(run)
+}
+
+struct ActivationInsert<'a> {
+    activation_id: &'a str,
+    run_id: &'a str,
+    node_id: &'a str,
+    logical_order: u64,
+    outcome: &'a str,
+    input: &'a Value,
+    output: Option<&'a Value>,
+    failure: Option<&'a Value>,
+    checkpoint: u64,
+    started_at: i64,
+    completed_at: i64,
+    elapsed_micros: u64,
+    provenance: Value,
+}
+
+fn insert_activation_row(
+    transaction: &Transaction<'_>,
+    value: ActivationInsert<'_>,
+) -> Result<(), RunError> {
+    let input_json = canonical_text(value.input)?;
+    let output_json = value.output.map(canonical_text).transpose()?;
+    let failure_json = value.failure.map(canonical_text).transpose()?;
+    let provenance_json = canonical_text(&value.provenance)?;
+    let input_digest = digest(value.input).map_err(RunError::Integrity)?;
+    let output_digest = value
+        .output
+        .map(digest)
+        .transpose()
+        .map_err(RunError::Integrity)?;
+    transaction.execute(
+        "INSERT INTO run_activations(activation_id,run_id,node_instance_id,logical_order,attempt,outcome,input_json,output_json,input_digest,output_digest,provenance_json,failure_json,checkpoint_sequence,started_at,completed_at,elapsed_micros)
+         VALUES(?1,?2,?3,?4,1,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
+        params![value.activation_id,value.run_id,value.node_id,value.logical_order as i64,value.outcome,input_json,output_json,input_digest,output_digest,provenance_json,failure_json,value.checkpoint as i64,value.started_at,value.completed_at,value.elapsed_micros as i64]
+    ).map_err(storage_error)?;
+    Ok(())
+}
+
+fn generated_activation_id(run_id: &str, node_id: &str, logical_order: u64) -> String {
+    let value=digest(&json!({"schema":"canopy.activation-identity/v1alpha1","run_id":run_id,"node_instance_id":node_id,"logical_order":logical_order,"attempt":1})).expect("Activation identity is serializable");
+    format!("activation-{}", &value[7..39])
+}
+
+fn current_trace_head(transaction: &Transaction<'_>, run_id: &str) -> Result<String, RunError> {
+    transaction
+        .query_row(
+            "SELECT trace_head_hash FROM runs WHERE run_id=?1",
+            params![run_id],
+            |row| row.get(0),
+        )
+        .map_err(storage_error)
+}
+
+fn load_execution_plan(
+    transaction: &Transaction<'_>,
+    run_id: &str,
+) -> Result<ExecutionPlan, RunError> {
+    let text:String=transaction.query_row("SELECT p.payload_json FROM runs r JOIN execution_plans p ON p.plan_id=r.plan_id WHERE r.run_id=?1",params![run_id],|row|row.get(0)).map_err(storage_error)?;
+    serde_json::from_str(&text)
+        .map_err(|error| RunError::Integrity(format!("pinned plan is invalid: {error}")))
 }
 
 fn complete_transaction(
@@ -1176,15 +1787,22 @@ fn recover_cancellations(connection: &mut Connection) -> Result<(), String> {
         values
     };
     for run_id in run_ids {
-        finalize_recovered_cancellation(connection, &run_id)
-            .map_err(|error| format!("{error:?}"))?;
+        finalize_requested_cancellation(
+            connection,
+            &run_id,
+            "cancellation_recovered",
+            "daemon_restarted_after_durable_cancellation",
+        )
+        .map_err(|error| format!("{error:?}"))?;
     }
     Ok(())
 }
 
-fn finalize_recovered_cancellation(
+fn finalize_requested_cancellation(
     connection: &mut Connection,
     run_id: &str,
+    event_type: &str,
+    reason: &str,
 ) -> Result<(), RunError> {
     let transaction = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1205,8 +1823,8 @@ fn finalize_recovered_cancellation(
         None,
         checkpoint,
         "control",
-        "cancellation_recovered",
-        json!({"state": "cancelled", "reason": "daemon_restarted_after_durable_cancellation"}),
+        event_type,
+        json!({"state": "cancelled", "reason": reason}),
         &previous_hash,
         occurred_at,
     )?;
@@ -1223,7 +1841,8 @@ fn finalize_recovered_cancellation(
             "resume": {"next_logical_order": run.durable.logical_order + 1},
             "correctness_digest": correctness,
             "complete": false,
-            "recovered": true,
+            "settled": true,
+            "recovered_after_restart": event_type == "cancellation_recovered",
             "counters": counters_json(
                 run.correctness.attempted,
                 run.correctness.succeeded,
@@ -1250,8 +1869,10 @@ struct SchedulerContext {
     ready: SyncSender<QueuedWork>,
     ready_budget: Arc<ByteBudget>,
     result_budget: Arc<ByteBudget>,
-    results: Receiver<CompletedWork>,
+    results: Receiver<ExecutorTerminal>,
+    envelopes: Receiver<GeneratedBatchEvent>,
     wake: Receiver<SchedulerSignal>,
+    artifacts: Arc<ArtifactService>,
     controls: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
     live: Arc<LiveHub>,
 }
@@ -1269,6 +1890,9 @@ struct Candidate {
     plan: ExecutionPlan,
     captured_invocation: Value,
     checkpoint_sequence: u64,
+    generate_resume: Option<GenerateResume>,
+    logical_data_override: Option<Value>,
+    artifact: Option<ArtifactReference>,
 }
 
 struct QueuedWork {
@@ -1282,6 +1906,11 @@ struct WorkItem {
     _result_bytes: BytePermit,
 }
 
+enum ExecutorTerminal {
+    Manual(CompletedWork),
+    Generated(CompletedGeneratedWork),
+}
+
 struct CompletedWork {
     run_id: String,
     result: ManualActivationResult,
@@ -1289,6 +1918,56 @@ struct CompletedWork {
     completed_at: i64,
     elapsed_micros: u64,
     _result_bytes: BytePermit,
+}
+
+struct GeneratedBatchEvent {
+    run_id: String,
+    envelopes: Vec<GeneratedEnvelope>,
+    generated_count: u64,
+    logical_bytes: u64,
+    stream_digest: String,
+    backpressure_micros: u64,
+    artifact: Option<ArtifactReference>,
+    started_at: i64,
+}
+
+struct GeneratedProgressCommit {
+    run_id: String,
+    generated_count: u64,
+    logical_bytes: u64,
+    stream_digest: String,
+    backpressure_events: u64,
+    backpressure_micros: u64,
+    first_ordinal: u64,
+    last_ordinal: u64,
+    artifact: Option<ArtifactReference>,
+    started_at: i64,
+}
+
+struct CompletedGeneratedWork {
+    run_id: String,
+    input: Value,
+    summary: Result<GenerateSummary, GenerateFailure>,
+    generated_count: u64,
+    logical_bytes: u64,
+    stream_digest: String,
+    artifact: Option<ArtifactReference>,
+    cancelled: bool,
+    started_at: i64,
+    completed_at: i64,
+    elapsed_micros: u64,
+    backpressure_micros: u64,
+    backpressure_events: u64,
+    _result_bytes: BytePermit,
+}
+
+#[derive(Debug)]
+struct GenerationCheckpointState {
+    generated_count: u64,
+    logical_bytes: u64,
+    backpressure_events: u64,
+    backpressure_micros: u64,
+    checkpointed_at: Instant,
 }
 
 fn start_scheduler(context: SchedulerContext) -> Result<JoinHandle<()>, String> {
@@ -1300,7 +1979,8 @@ fn start_scheduler(context: SchedulerContext) -> Result<JoinHandle<()>, String> 
 
 fn start_executor(
     ready: Receiver<QueuedWork>,
-    results: SyncSender<CompletedWork>,
+    results: SyncSender<ExecutorTerminal>,
+    envelopes: SyncSender<GeneratedBatchEvent>,
 ) -> Result<JoinHandle<()>, String> {
     thread::Builder::new()
         .name("workflowd-native-executor".into())
@@ -1313,26 +1993,120 @@ fn start_executor(
                 } = queued.work;
                 let started_at = now_millis();
                 let started = Instant::now();
-                let result = run_engine::execute_manual(ManualActivationInput {
-                    run_id: candidate.run_id.clone(),
-                    revision_id: candidate.revision_id,
+                if candidate.plan.nodes.len() == 1 {
+                    let result = run_engine::execute_manual(ManualActivationInput {
+                        run_id: candidate.run_id.clone(),
+                        revision_id: candidate.revision_id,
+                        revision_digest: candidate.revision_digest,
+                        plan_digest: candidate.plan_digest,
+                        plan: candidate.plan,
+                        captured_invocation: candidate.captured_invocation,
+                        cancellation_observed: cancellation.load(Ordering::Acquire),
+                    });
+                    let completed_at = now_millis();
+                    let elapsed_micros = started.elapsed().as_micros().min(i64::MAX as u128) as u64;
+                    if results
+                        .send(ExecutorTerminal::Manual(CompletedWork {
+                            run_id: candidate.run_id,
+                            result,
+                            started_at,
+                            completed_at,
+                            elapsed_micros,
+                            _result_bytes,
+                        }))
+                        .is_err()
+                    {
+                        break;
+                    }
+                    continue;
+                }
+
+                let run_id = candidate.run_id.clone();
+                let input = candidate.captured_invocation.clone();
+                let artifact = candidate.artifact.clone();
+                let mut generated_count = 0_u64;
+                let mut logical_bytes = 0_u64;
+                let mut stream_digest = "genesis".to_owned();
+                let mut backpressure_micros = 0_u64;
+                let mut backpressure_events = 0_u64;
+                let mut cancelled = false;
+                let physical_data = candidate
+                    .artifact
+                    .as_ref()
+                    .map(|reference| json!({"$artifact": reference}));
+                let summary = match GenerateSession::start(GenerateStart {
+                    run_id: candidate.run_id,
                     revision_digest: candidate.revision_digest,
                     plan_digest: candidate.plan_digest,
-                    plan: candidate.plan,
-                    captured_invocation: candidate.captured_invocation,
-                    cancellation_observed: cancellation.load(Ordering::Acquire),
-                });
+                    plan: &candidate.plan,
+                    input: candidate.captured_invocation,
+                    logical_data_override: candidate.logical_data_override,
+                    physical_data,
+                    resume: candidate.generate_resume,
+                }) {
+                    Ok(mut session) => loop {
+                        if cancellation.load(Ordering::Acquire) {
+                            cancelled = true;
+                            break Err(GenerateFailure {
+                                code: "canopy.generate-items.cancelled".into(),
+                                message: "Generation observed cooperative cancellation.".into(),
+                            });
+                        }
+                        match session.next_batch() {
+                            Ok(Some(batch)) => {
+                                let progress = session.progress();
+                                generated_count = progress.0;
+                                logical_bytes = progress.1;
+                                stream_digest = progress.2.to_owned();
+                                let sent = Instant::now();
+                                if envelopes
+                                    .send(GeneratedBatchEvent {
+                                        run_id: run_id.clone(),
+                                        envelopes: batch,
+                                        generated_count,
+                                        logical_bytes,
+                                        stream_digest: stream_digest.clone(),
+                                        backpressure_micros,
+                                        artifact: artifact.clone(),
+                                        started_at,
+                                    })
+                                    .is_err()
+                                {
+                                    return;
+                                }
+                                let blocked_micros =
+                                    sent.elapsed().as_micros().min(u64::MAX as u128) as u64;
+                                backpressure_micros =
+                                    backpressure_micros.saturating_add(blocked_micros);
+                                if blocked_micros >= 1_000 {
+                                    backpressure_events = backpressure_events.saturating_add(1);
+                                }
+                            }
+                            Ok(None) => break session.finish(),
+                            Err(error) => break Err(error),
+                        }
+                    },
+                    Err(error) => Err(error),
+                };
                 let completed_at = now_millis();
-                let elapsed_micros = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
+                let elapsed_micros = started.elapsed().as_micros().min(i64::MAX as u128) as u64;
                 if results
-                    .send(CompletedWork {
-                        run_id: candidate.run_id,
-                        result,
+                    .send(ExecutorTerminal::Generated(CompletedGeneratedWork {
+                        run_id,
+                        input,
+                        summary,
+                        generated_count,
+                        logical_bytes,
+                        stream_digest,
+                        artifact,
+                        cancelled,
                         started_at,
                         completed_at,
                         elapsed_micros,
+                        backpressure_micros,
+                        backpressure_events,
                         _result_bytes,
-                    })
+                    }))
                     .is_err()
                 {
                     break;
@@ -1354,6 +2128,7 @@ fn scheduler_loop(context: SchedulerContext) {
     let mut stopping = false;
     let mut scan_requested = false;
     let mut scan_after = Instant::now();
+    let mut generation_checkpoints: HashMap<String, GenerationCheckpointState> = HashMap::new();
     while !stopping {
         loop {
             match context.wake.try_recv() {
@@ -1378,30 +2153,16 @@ fn scheduler_loop(context: SchedulerContext) {
             break;
         }
 
+        while let Ok(batch) = context.envelopes.try_recv() {
+            handle_generated_batch(&context, &mut generation_checkpoints, batch);
+        }
         while let Ok(completed) = context.results.try_recv() {
-            active.remove(&completed.run_id);
-            if let Ok(mut controls) = context.controls.lock() {
-                controls.remove(&completed.run_id);
-            }
-            let weight = result_weight(&completed.result);
-            match context
-                .writer
-                .call(WriterOperation::Complete(completed), weight)
-            {
-                Ok(WriterReply::Run(run)) => {
-                    context.live.emit(
-                        &run.run_id,
-                        run.durable.checkpoint_sequence,
-                        "terminal",
-                        stream_payload(&run, "durable", &run.durable.state, true),
-                        true,
-                    );
-                }
-                Ok(_) => error!(event = "run_checkpoint_wrong_writer_reply"),
-                Err(reason) => {
-                    error!(event = "run_checkpoint_failed", reason = ?reason);
-                }
-            }
+            finish_executor_terminal(
+                &context,
+                &mut active,
+                &mut generation_checkpoints,
+                completed,
+            );
             scan_requested = true;
             scan_after = Instant::now();
         }
@@ -1409,7 +2170,7 @@ fn scheduler_loop(context: SchedulerContext) {
         let mut dispatched = false;
         if scan_requested && Instant::now() >= scan_after {
             while active.len() < MAX_HOT_RUNS {
-                let candidate = match next_candidate(&connection, &active) {
+                let mut candidate = match next_candidate(&connection, &active) {
                     Ok(Some(candidate)) => candidate,
                     Ok(None) => {
                         scan_requested = false;
@@ -1435,6 +2196,44 @@ fn scheduler_loop(context: SchedulerContext) {
                         }
                         continue;
                     }
+                }
+                if let Err(reason) = prepare_candidate_artifact(&context.artifacts, &mut candidate)
+                {
+                    error!(event = "run_artifact_preparation_failed", run_id = candidate.run_id, reason = ?reason);
+                    if let Ok(mut controls) = context.controls.lock() {
+                        controls.remove(&candidate.run_id);
+                    }
+                    let suspended = matches!(&reason, RunError::Storage(_));
+                    match context.writer.call(
+                        WriterOperation::PreparationFailed {
+                            run_id: candidate.run_id.clone(),
+                            reason: format!("{reason:?}"),
+                            suspended,
+                        },
+                        8 * 1024,
+                    ) {
+                        Ok(WriterReply::Run(run)) => context.live.emit(
+                            &run.run_id,
+                            run.durable.checkpoint_sequence,
+                            if run.durable.terminal {
+                                "terminal"
+                            } else {
+                                "checkpoint"
+                            },
+                            stream_payload(
+                                &run,
+                                "durable",
+                                &run.durable.state,
+                                run.durable.terminal,
+                            ),
+                            true,
+                        ),
+                        Ok(_) => error!(event = "run_preparation_wrong_writer_reply"),
+                        Err(error) => {
+                            error!(event = "run_preparation_checkpoint_failed", error = ?error)
+                        }
+                    }
+                    continue;
                 }
                 let ready_weight = candidate_weight(&candidate);
                 let Some(ready_permit) = context.ready_budget.reserve(ready_weight) else {
@@ -1493,30 +2292,12 @@ fn scheduler_loop(context: SchedulerContext) {
         if !active.is_empty() {
             match context.results.recv_timeout(SCHEDULER_TICK) {
                 Ok(completed) => {
-                    active.remove(&completed.run_id);
-                    if let Ok(mut controls) = context.controls.lock() {
-                        controls.remove(&completed.run_id);
-                    }
-                    let run_id = completed.run_id.clone();
-                    let weight = result_weight(&completed.result);
-                    match context
-                        .writer
-                        .call(WriterOperation::Complete(completed), weight)
-                    {
-                        Ok(WriterReply::Run(run)) => context.live.emit(
-                            &run.run_id,
-                            run.durable.checkpoint_sequence,
-                            "terminal",
-                            stream_payload(&run, "durable", &run.durable.state, true),
-                            true,
-                        ),
-                        Ok(_) => error!(event = "run_checkpoint_wrong_writer_reply"),
-                        Err(reason) => error!(
-                            event = "run_checkpoint_failed",
-                            run_id,
-                            reason = ?reason
-                        ),
-                    }
+                    finish_executor_terminal(
+                        &context,
+                        &mut active,
+                        &mut generation_checkpoints,
+                        completed,
+                    );
                     scan_requested = true;
                     scan_after = Instant::now();
                 }
@@ -1553,15 +2334,170 @@ fn scheduler_loop(context: SchedulerContext) {
     }
 }
 
+fn handle_generated_batch(
+    context: &SchedulerContext,
+    checkpoints: &mut HashMap<String, GenerationCheckpointState>,
+    batch: GeneratedBatchEvent,
+) {
+    let Some(first_ordinal) = batch.envelopes.first().map(|envelope| envelope.ordinal) else {
+        return;
+    };
+    let last_ordinal = batch
+        .envelopes
+        .last()
+        .map(|envelope| envelope.ordinal)
+        .unwrap_or(first_ordinal);
+    debug_assert!(batch
+        .envelopes
+        .windows(2)
+        .all(|window| window[1].ordinal == window[0].ordinal + 1));
+
+    let state = checkpoints.entry(batch.run_id.clone()).or_insert_with(|| {
+        let batch_logical_bytes = batch.envelopes.iter().fold(0_u64, |total, envelope| {
+            total.saturating_add(envelope.logical_bytes)
+        });
+        GenerationCheckpointState {
+            generated_count: first_ordinal,
+            logical_bytes: batch.logical_bytes.saturating_sub(batch_logical_bytes),
+            backpressure_events: 0,
+            backpressure_micros: 0,
+            checkpointed_at: Instant::now(),
+        }
+    });
+    let observed_backpressure = batch.backpressure_micros > state.backpressure_micros;
+    if observed_backpressure {
+        state.backpressure_events = state.backpressure_events.saturating_add(1);
+    }
+    state.backpressure_micros = batch.backpressure_micros;
+
+    let count_due = batch.generated_count.saturating_sub(state.generated_count)
+        >= CHECKPOINT_MAX_OUTCOMES as u64;
+    let bytes_due =
+        batch.logical_bytes.saturating_sub(state.logical_bytes) >= CHECKPOINT_MAX_BYTES as u64;
+    let time_due =
+        state.checkpointed_at.elapsed() >= Duration::from_millis(CHECKPOINT_MAX_LATENCY_MILLIS);
+    context.live.emit(
+        &batch.run_id,
+        0,
+        "generation-progress",
+        json!({
+            "run_id": batch.run_id,
+            "durability": "speculative",
+            "generated_count": batch.generated_count,
+            "logical_bytes": batch.logical_bytes,
+            "stream_digest": batch.stream_digest,
+            "first_ordinal": first_ordinal,
+            "last_ordinal": last_ordinal,
+            "batch_count": batch.envelopes.len(),
+            "queue_capacity_items": ENVELOPE_QUEUE_COUNT,
+            "queue_capacity_bytes": ENVELOPE_QUEUE_BYTES,
+            "artifact": batch.artifact,
+            "backpressure_observed": observed_backpressure,
+            "terminal": false
+        }),
+        false,
+    );
+    if !(count_due || bytes_due || time_due) {
+        return;
+    }
+
+    let progress = GeneratedProgressCommit {
+        run_id: batch.run_id.clone(),
+        generated_count: batch.generated_count,
+        logical_bytes: batch.logical_bytes,
+        stream_digest: batch.stream_digest,
+        backpressure_events: state.backpressure_events,
+        backpressure_micros: batch.backpressure_micros,
+        first_ordinal: state.generated_count,
+        last_ordinal: batch.generated_count.saturating_sub(1),
+        artifact: batch.artifact,
+        started_at: batch.started_at,
+    };
+    let weight = 8 * 1024;
+    match context
+        .writer
+        .call(WriterOperation::GenerationProgress(progress), weight)
+    {
+        Ok(WriterReply::Run(run)) => {
+            state.generated_count = batch.generated_count;
+            state.logical_bytes = batch.logical_bytes;
+            state.checkpointed_at = Instant::now();
+            context.live.emit(
+                &run.run_id,
+                run.durable.checkpoint_sequence,
+                "checkpoint",
+                stream_payload(&run, "durable", &run.durable.state, false),
+                true,
+            );
+        }
+        Ok(_) => error!(event = "run_generation_checkpoint_wrong_writer_reply"),
+        Err(reason) => error!(
+            event = "run_generation_checkpoint_failed",
+            run_id = batch.run_id,
+            reason = ?reason
+        ),
+    }
+}
+
+fn finish_executor_terminal(
+    context: &SchedulerContext,
+    active: &mut HashSet<String>,
+    checkpoints: &mut HashMap<String, GenerationCheckpointState>,
+    completed: ExecutorTerminal,
+) {
+    // The executor sends every batch before its terminal message. Drain that separate
+    // bounded channel now so the terminal transaction cannot overtake the final batch.
+    while let Ok(batch) = context.envelopes.try_recv() {
+        handle_generated_batch(context, checkpoints, batch);
+    }
+    let (run_id, weight, operation) = match completed {
+        ExecutorTerminal::Manual(completed) => {
+            let run_id = completed.run_id.clone();
+            let weight = result_weight(&completed.result);
+            (run_id, weight, WriterOperation::Complete(completed))
+        }
+        ExecutorTerminal::Generated(mut completed) => {
+            let run_id = completed.run_id.clone();
+            if let Some(progress) = checkpoints.remove(&run_id) {
+                completed.backpressure_events = completed
+                    .backpressure_events
+                    .max(progress.backpressure_events);
+            }
+            (
+                run_id,
+                32 * 1024,
+                WriterOperation::CompleteGenerated(completed),
+            )
+        }
+    };
+    active.remove(&run_id);
+    if let Ok(mut controls) = context.controls.lock() {
+        controls.remove(&run_id);
+    }
+    match context.writer.call(operation, weight) {
+        Ok(WriterReply::Run(run)) => context.live.emit(
+            &run.run_id,
+            run.durable.checkpoint_sequence,
+            "terminal",
+            stream_payload(&run, "durable", &run.durable.state, true),
+            true,
+        ),
+        Ok(_) => error!(event = "run_checkpoint_wrong_writer_reply"),
+        Err(reason) => error!(event = "run_checkpoint_failed", run_id, reason = ?reason),
+    }
+}
+
 fn next_candidate(
     connection: &Connection,
     active: &HashSet<String>,
 ) -> Result<Option<Candidate>, RunError> {
     let mut statement = connection
         .prepare(
-            "SELECT r.run_id,r.revision_id,r.revision_digest,r.plan_digest,p.payload_json,r.captured_invocation_json,r.checkpoint_sequence
+            "SELECT r.run_id,r.revision_id,r.revision_digest,r.plan_digest,p.payload_json,r.captured_invocation_json,r.checkpoint_sequence,g.generated_count,g.logical_bytes,g.stream_digest
              FROM runs r JOIN execution_plans p ON p.plan_id=r.plan_id
-             WHERE r.state='queued' ORDER BY r.admitted_at,r.run_id LIMIT 64",
+             LEFT JOIN run_generation_progress g ON g.run_id=r.run_id
+             WHERE r.state='queued' AND NOT EXISTS(SELECT 1 FROM run_suspensions s WHERE s.run_id=r.run_id)
+             ORDER BY r.admitted_at,r.run_id LIMIT 64",
         )
         .map_err(storage_error)?;
     let mut rows = statement.query([]).map_err(storage_error)?;
@@ -1584,6 +2520,19 @@ fn next_candidate(
                 RunError::Integrity(format!("queued invocation is invalid: {error}"))
             })?,
             checkpoint_sequence: row.get::<_, i64>(6).map_err(storage_error)? as u64,
+            generate_resume: row
+                .get::<_, Option<i64>>(7)
+                .map_err(storage_error)?
+                .map(|generated_count| {
+                    Ok(GenerateResume {
+                        next_ordinal: generated_count as u64,
+                        logical_bytes: row.get::<_, i64>(8).map_err(storage_error)? as u64,
+                        stream_digest: row.get(9).map_err(storage_error)?,
+                    })
+                })
+                .transpose()?,
+            logical_data_override: None,
+            artifact: None,
         }));
     }
     Ok(None)
@@ -1600,7 +2549,7 @@ fn run_state(connection: &Connection, run_id: &str) -> Result<String, RunError> 
 }
 
 fn load_run(connection: &Connection, run_id: &str) -> Result<RunView, RunError> {
-    connection
+    let mut run = connection
         .query_row(
             "SELECT run_id,run_request_id,workflow_id,publication_event_id,revision_id,revision_digest,plan_id,plan_digest,state,checkpoint_sequence,logical_order,attempted,succeeded,cancelled,failed,output_count,correctness_digest,digest_complete,admitted_at,started_at,updated_at,terminal_at
              FROM runs WHERE run_id=?1",
@@ -1636,6 +2585,7 @@ fn load_run(connection: &Connection, run_id: &str) -> Result<RunView, RunError> 
                         failed: row.get::<_, i64>(14)? as u64,
                         output_count: row.get::<_, i64>(15)? as u64,
                     },
+                    generation: None,
                     admitted_at: row.get(18)?,
                     started_at: row.get(19)?,
                     terminal_at: row.get(21)?,
@@ -1649,7 +2599,46 @@ fn load_run(connection: &Connection, run_id: &str) -> Result<RunView, RunError> 
             } else {
                 storage_error(error)
             }
-        })
+        })?;
+    run.generation = load_generation_progress(connection, run_id)?;
+    let suspended: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM run_suspensions WHERE run_id=?1)",
+            params![run_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(storage_error)?
+        == 1;
+    if suspended && !run.durable.terminal {
+        run.durable.state = "suspended".into();
+    }
+    Ok(run)
+}
+
+fn load_generation_progress(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<Option<GenerationProgress>, RunError> {
+    connection
+        .query_row(
+            "SELECT state,generated_count,logical_bytes,stream_digest,backpressure_events,artifact_json FROM run_generation_progress WHERE run_id=?1",
+            params![run_id],
+            |row| {
+                let artifact: Option<String> = row.get(5)?;
+                Ok(GenerationProgress {
+                    state: row.get(0)?,
+                    generated_count: row.get::<_, i64>(1)? as u64,
+                    logical_bytes: row.get::<_, i64>(2)? as u64,
+                    stream_digest: row.get(3)?,
+                    backpressure_events: row.get::<_, i64>(4)? as u64,
+                    artifact: artifact.as_deref().map(parse_sql_json).transpose()?.map(|value| {
+                        serde_json::from_value(value).map_err(|error| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error)))
+                    }).transpose()?,
+                })
+            },
+        )
+        .optional()
+        .map_err(storage_error)
 }
 
 fn load_trace(connection: &Connection, run_id: &str) -> Result<TraceView, RunError> {
@@ -2247,6 +3236,10 @@ fn queue_profile() -> QueueProfileView {
             count: READY_QUEUE_COUNT,
             bytes: READY_QUEUE_BYTES,
         },
+        envelopes: QueueLimitView {
+            count: ENVELOPE_QUEUE_COUNT,
+            bytes: ENVELOPE_QUEUE_BYTES,
+        },
         results: QueueLimitView {
             count: RESULT_QUEUE_COUNT,
             bytes: RESULT_QUEUE_BYTES,
@@ -2285,6 +3278,78 @@ fn safe_resource_facts() -> Value {
         "credentials_recorded": false,
         "private_reasoning_recorded": false
     })
+}
+
+fn prepare_candidate_artifact(
+    artifacts: &ArtifactService,
+    candidate: &mut Candidate,
+) -> Result<(), RunError> {
+    let Some(node) = candidate
+        .plan
+        .nodes
+        .iter()
+        .find(|node| node.contract_lock.name == "generate-items")
+    else {
+        return Ok(());
+    };
+    let node_id = node.node_instance_id.clone();
+    let configuration = node.configuration.clone();
+    let data = configuration.get("data").cloned().unwrap_or(Value::Null);
+    if let Some(artifact_id) = configured_artifact_id(&data) {
+        let (view, bytes, _, _, _) =
+            artifacts
+                .content(&artifact_id, None)
+                .map_err(|error| match error {
+                    ArtifactError::Storage(message) => RunError::Storage(message),
+                    ArtifactError::NotAuthorized => {
+                        RunError::Integrity("Generate Items Artifact reference was denied".into())
+                    }
+                    other => RunError::Integrity(format!(
+                        "Generate Items Artifact could not be verified: {other}"
+                    )),
+                })?;
+        let logical_data: Value = serde_json::from_slice(&bytes)
+            .map_err(|_| RunError::Integrity("Generate Items Artifact is not valid JSON".into()))?;
+        reject_sensitive_keys(&logical_data)?;
+        candidate.logical_data_override = Some(logical_data);
+        candidate.artifact = Some(view.reference);
+        return Ok(());
+    }
+
+    reject_sensitive_keys(&data)?;
+    let plaintext = canonical_bytes(&data).map_err(RunError::Integrity)?;
+    let force = configuration["storage_mode"] == "artifact";
+    if !force && plaintext.len() <= 4 * 1024 {
+        return Ok(());
+    }
+    let count = configuration["count"].as_u64().unwrap_or_default();
+    let reference_id = format!("run:{}:node:{node_id}:data", candidate.run_id);
+    let view = artifacts
+        .put(
+            &plaintext,
+            "application/json",
+            &reference_id,
+            "run_generate_data",
+            count.max(1),
+        )
+        .map_err(|error| match error {
+            ArtifactError::Storage(message) => RunError::Storage(message),
+            other => RunError::Integrity(format!("Artifact preparation failed: {other}")),
+        })?;
+    candidate.artifact = Some(view.reference);
+    Ok(())
+}
+
+fn configured_artifact_id(value: &Value) -> Option<String> {
+    let handle = value.as_object()?.get("$artifact")?;
+    match handle {
+        Value::String(artifact_id) => Some(artifact_id.clone()),
+        Value::Object(reference) => reference
+            .get("artifact_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        _ => None,
+    }
 }
 
 fn candidate_weight(candidate: &Candidate) -> usize {
@@ -2649,6 +3714,61 @@ mod tests {
     use super::*;
 
     #[test]
+    fn artifact_preparation_failure_cannot_strand_a_requested_cancellation() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE workflow_drafts(workflow_id TEXT PRIMARY KEY);
+             CREATE TABLE publication_events(event_id TEXT PRIMARY KEY);
+             CREATE TABLE workflow_revisions(revision_id TEXT PRIMARY KEY);
+             CREATE TABLE execution_plans(plan_id TEXT PRIMARY KEY);",
+            )
+            .unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO workflow_drafts VALUES('workflow-test');
+             INSERT INTO publication_events VALUES('event-test');
+             INSERT INTO workflow_revisions VALUES('revision-test');
+             INSERT INTO execution_plans VALUES('plan-test');",
+            )
+            .unwrap();
+        initialize_schema(&connection).unwrap();
+        connection.execute(
+            "INSERT INTO runs(
+                run_id,run_request_id,request_digest,workflow_id,publication_event_id,
+                revision_id,revision_digest,plan_id,plan_digest,captured_invocation_json,
+                state,checkpoint_sequence,logical_order,attempted,succeeded,cancelled,failed,
+                output_count,correctness_digest,digest_complete,cancellation_request_id,
+                cancellation_request_digest,trace_head_hash,admitted_at,started_at,updated_at,terminal_at
+             ) VALUES(
+                'run-cancel-preparation','request-cancel-preparation','sha256:request','workflow-test','event-test',
+                'revision-test','sha256:revision','plan-test','sha256:plan','{}',
+                'cancel_requested',0,0,0,0,0,0,0,NULL,0,'cancel-request','sha256:cancel','genesis',0,NULL,0,NULL
+             )",
+            [],
+        ).unwrap();
+
+        let run = preparation_failed_transaction(
+            &mut connection,
+            "run-cancel-preparation",
+            "injected storage pressure",
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(run.durable.state, "cancelled");
+        assert!(run.durable.terminal);
+        let stored: String = connection
+            .query_row(
+                "SELECT state FROM runs WHERE run_id='run-cancel-preparation'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, "cancelled");
+    }
+
+    #[test]
     fn byte_budget_releases_capacity() {
         let budget = Arc::new(ByteBudget::new(10));
         let first = budget.reserve(8).unwrap();
@@ -2722,6 +3842,7 @@ mod tests {
                 failed: 0,
                 output_count: 0,
             },
+            generation: None,
             admitted_at: 0,
             started_at: None,
             terminal_at: None,

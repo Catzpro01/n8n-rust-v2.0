@@ -58,6 +58,20 @@ export type PublicationStatus = {
   revisions: RevisionSummary[];
   difference: { state: "unpublished" | "matches" | "changed"; fields: string[] };
 };
+export type ArtifactReference = {
+  artifact_id: string;
+  format: string;
+  media_type: string;
+  logical_bytes: number;
+  content_digest_algorithm: string;
+};
+export type ArtifactView = {
+  reference: ArtifactReference;
+  deduplicated: boolean;
+  chunk_bytes: number;
+  chunk_count: number;
+  integrity_verified: boolean;
+};
 export type RunView = {
   schema: string;
   run_id: string;
@@ -68,13 +82,14 @@ export type RunView = {
   revision_digest: string;
   plan_id: string;
   plan_digest: string;
-  durable: { state: "queued" | "cancel_requested" | "succeeded" | "failed" | "cancelled"; checkpoint_sequence: number; logical_order: number; terminal: boolean; updated_at: number };
+  durable: { state: "queued" | "cancel_requested" | "suspended" | "succeeded" | "failed" | "cancelled"; checkpoint_sequence: number; logical_order: number; terminal: boolean; updated_at: number };
   live?: { state: string; speculative: boolean; boot_epoch: string; sequence: number };
   correctness: { canonicalization: string; algorithm: string; digest?: string; complete: boolean; attempted: number; succeeded: number; cancelled: number; failed: number; output_count: number };
+  generation?: { state: "running" | "suspended" | "succeeded" | "failed" | "cancelled"; generated_count: number; logical_bytes: number; stream_digest: string; backpressure_events: number; artifact?: ArtifactReference };
   admitted_at: number;
   started_at?: number;
   terminal_at?: number;
-  queue_profile: { profile: string; maximum_inline_invocation_bytes: number };
+  queue_profile: { profile: string; maximum_inline_invocation_bytes: number; envelopes: { count: number; bytes: number } };
 };
 export type TraceView = {
   schema: string;

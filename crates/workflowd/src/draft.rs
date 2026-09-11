@@ -15,8 +15,7 @@ const SNAPSHOT_LIMIT: usize = 4;
 #[derive(Clone)]
 pub struct DraftService {
     database: PathBuf,
-    manual_contract: Value,
-    manual_lock: NodeContractLock,
+    contracts: Vec<(NodeContractLock, Value)>,
     policy: EditingPolicy,
 }
 #[derive(Clone)]
@@ -99,6 +98,9 @@ pub enum DraftOperation {
         node_instance_id: String,
         configuration: Value,
     },
+    Connect {
+        connection: Value,
+    },
     SetWorkflowAnnotation {
         annotation: String,
     },
@@ -120,8 +122,8 @@ pub struct Catalog {
 }
 #[derive(Serialize)]
 pub struct CatalogNode {
-    pub display_name: &'static str,
-    pub description: &'static str,
+    pub display_name: String,
+    pub description: String,
     pub contract_lock: NodeContractLock,
     pub configuration_schema: Value,
     pub editor_hints: Value,
@@ -249,6 +251,12 @@ enum StoredOperation {
         node_instance_id: String,
         configuration: Value,
     },
+    Connect {
+        connection: Value,
+    },
+    Disconnect {
+        connection: Value,
+    },
     SetWorkflowAnnotation {
         annotation: String,
     },
@@ -267,14 +275,19 @@ struct LeaseRow {
 
 impl DraftService {
     pub fn initialize(config: &ServeConfig) -> Result<Self, String> {
-        let manual_contract: Value = serde_json::from_str(include_str!(
-            "../../../contracts/manual-trigger.v1alpha1.json"
-        ))
-        .map_err(err)?;
+        let contracts = [
+            include_str!("../../../contracts/manual-trigger.v1alpha1.json"),
+            include_str!("../../../contracts/generate-items.v1alpha1.json"),
+        ]
+        .into_iter()
+        .map(|source| {
+            let contract: Value = serde_json::from_str(source).map_err(err)?;
+            Ok((lock(&contract)?, contract))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
         let service = Self {
             database: config.state_dir.join("workflow.sqlite3"),
-            manual_lock: lock(&manual_contract)?,
-            manual_contract,
+            contracts,
             policy: EditingPolicy {
                 lease_ttl_ms: config.draft_lease_ttl_seconds * 1000,
                 takeover_grace_ms: config.draft_takeover_grace_seconds * 1000,
@@ -333,16 +346,26 @@ impl DraftService {
         Ok(service)
     }
     pub fn catalog(&self) -> Catalog {
-        let contract = &self.manual_contract;
+        let nodes = self
+            .contracts
+            .iter()
+            .map(|(contract_lock, contract)| {
+                let display = &contract["extensions"]["canopy.workbench/display"];
+                CatalogNode {
+                    display_name: display["display_name"]
+                        .as_str()
+                        .unwrap_or("Native Node")
+                        .into(),
+                    description: display["description"].as_str().unwrap_or("").into(),
+                    contract_lock: contract_lock.clone(),
+                    configuration_schema: contract["configuration"]["schema"].clone(),
+                    editor_hints: contract["configuration"]["editor_hints"].clone(),
+                }
+            })
+            .collect();
         Catalog {
             contract_api_version: "v1alpha1",
-            nodes: vec![CatalogNode {
-                display_name: "Manual Trigger",
-                description: "Begin a Workflow with one owner-captured invocation.",
-                contract_lock: self.manual_lock.clone(),
-                configuration_schema: contract["configuration"]["schema"].clone(),
-                editor_hints: contract["configuration"]["editor_hints"].clone(),
-            }],
+            nodes,
         }
     }
     pub fn contract(
@@ -351,14 +374,15 @@ impl DraftService {
         name: &str,
         version: &str,
     ) -> Result<Value, DraftError> {
-        if namespace == self.manual_lock.namespace
-            && name == self.manual_lock.name
-            && version == self.manual_lock.version
-        {
-            Ok(self.manual_contract.clone())
-        } else {
-            Err(DraftError::NotFound)
-        }
+        self.contracts
+            .iter()
+            .find(|(contract_lock, _)| {
+                namespace == contract_lock.namespace
+                    && name == contract_lock.name
+                    && version == contract_lock.version
+            })
+            .map(|(_, contract)| contract.clone())
+            .ok_or(DraftError::NotFound)
     }
     pub fn create(&self, request: CreateWorkflow) -> Result<WorkflowDraft, DraftError> {
         identifier(&request.workflow_id)?;
@@ -899,12 +923,12 @@ fn prepare_and_apply(
             node_instance_id,
             configuration,
         } => {
-            manual_configuration(&configuration)?;
             let node = draft
                 .nodes
                 .iter_mut()
                 .find(|node| node.id == node_instance_id)
                 .ok_or(DraftError::NotFound)?;
+            validate_configuration(&node.contract_lock.name, &configuration)?;
             let previous = node.configuration.clone();
             node.configuration = configuration.clone();
             (
@@ -918,6 +942,30 @@ fn prepare_and_apply(
                 },
                 vec![node_instance_id.clone()],
                 json!({"kind":"node_configured","node_instance_id":node_instance_id}),
+            )
+        }
+        DraftOperation::Connect { connection } => {
+            let (connection_id, source_id, target_id) = connection_identity(&connection)?;
+            if !draft.nodes.iter().any(|node| node.id == source_id)
+                || !draft.nodes.iter().any(|node| node.id == target_id)
+            {
+                return Err(DraftError::NotFound);
+            }
+            if draft.connections.iter().any(|existing| {
+                existing.get("id").and_then(Value::as_str) == Some(connection_id.as_str())
+            }) {
+                return Err(DraftError::DuplicateIdentity);
+            }
+            draft.connections.push(connection.clone());
+            (
+                StoredOperation::Connect {
+                    connection: connection.clone(),
+                },
+                StoredOperation::Disconnect {
+                    connection: connection.clone(),
+                },
+                vec![connection_id.clone(), source_id, target_id],
+                json!({"kind":"connection_added","connection_id":connection_id}),
             )
         }
         DraftOperation::SetWorkflowAnnotation { annotation } => {
@@ -981,6 +1029,28 @@ fn apply_stored(
                 .ok_or(DraftError::NotFound)?;
             node.configuration = configuration.clone();
             Ok(vec![node_instance_id.clone()])
+        }
+        StoredOperation::Connect { connection } => {
+            let (connection_id, source_id, target_id) = connection_identity(connection)?;
+            if draft.connections.iter().any(|existing| {
+                existing.get("id").and_then(Value::as_str) == Some(connection_id.as_str())
+            }) {
+                return Err(DraftError::DuplicateIdentity);
+            }
+            draft.connections.push(connection.clone());
+            Ok(vec![connection_id, source_id, target_id])
+        }
+        StoredOperation::Disconnect { connection } => {
+            let (connection_id, source_id, target_id) = connection_identity(connection)?;
+            let index = draft
+                .connections
+                .iter()
+                .position(|existing| {
+                    existing.get("id").and_then(Value::as_str) == Some(connection_id.as_str())
+                })
+                .ok_or(DraftError::NotFound)?;
+            draft.connections.remove(index);
+            Ok(vec![connection_id, source_id, target_id])
         }
         StoredOperation::SetWorkflowAnnotation { annotation } => {
             draft.annotation = annotation.clone();
@@ -1269,12 +1339,16 @@ fn editor_label_for(
         .unwrap_or_else(|| session_label(session)))
 }
 fn validate_node(node: &NodeInstance, service: &DraftService) -> Result<(), DraftError> {
-    if node.contract_lock != service.manual_lock {
+    if !service
+        .contracts
+        .iter()
+        .any(|(contract_lock, _)| node.contract_lock == *contract_lock)
+    {
         return Err(DraftError::InvalidContractLock);
     }
     identifier(&node.id)?;
     objects(&node.configuration, &node.compatibility_metadata)?;
-    manual_configuration(&node.configuration)
+    validate_configuration(&node.contract_lock.name, &node.configuration)
 }
 fn count_history_events(connection: &Connection, workflow_id: &str) -> Result<usize, DraftError> {
     let value: i64 = connection
@@ -1337,6 +1411,10 @@ fn operation_summary(operation: &DraftOperation) -> Value {
         DraftOperation::ConfigureNode {
             node_instance_id, ..
         } => json!({"kind":"configure_node","affected_identity":node_instance_id}),
+        DraftOperation::Connect { connection } => json!({
+            "kind":"connect",
+            "affected_identity":connection.get("id").and_then(Value::as_str)
+        }),
         DraftOperation::SetWorkflowAnnotation { .. } => json!({"kind":"set_workflow_annotation"}),
         DraftOperation::Undo => json!({"kind":"undo"}),
         DraftOperation::Redo => json!({"kind":"redo"}),
@@ -1374,15 +1452,145 @@ fn objects(first: &Value, second: &Value) -> Result<(), DraftError> {
         Err(DraftError::Invalid("metadata".into()))
     }
 }
-fn manual_configuration(value: &Value) -> Result<(), DraftError> {
+fn validate_configuration(name: &str, value: &Value) -> Result<(), DraftError> {
     let object = value
         .as_object()
         .ok_or_else(|| DraftError::Invalid("configuration".into()))?;
-    if object.len() == 1 && object.get("capture_mode").and_then(Value::as_str) == Some("manual") {
-        Ok(())
-    } else {
-        Err(DraftError::Invalid("manual_trigger_configuration".into()))
+    match name {
+        "manual-trigger"
+            if object.len() == 1
+                && object.get("capture_mode").and_then(Value::as_str) == Some("manual") =>
+        {
+            Ok(())
+        }
+        "generate-items" => {
+            const FIELDS: &[&str] = &["count", "start", "step", "data", "storage_mode"];
+            if object.len() != FIELDS.len()
+                || FIELDS.iter().any(|field| !object.contains_key(*field))
+            {
+                return Err(DraftError::Invalid("generate_items_configuration".into()));
+            }
+            let count = object.get("count").and_then(Value::as_u64);
+            let start = object.get("start").and_then(Value::as_i64);
+            let step = object.get("step").and_then(Value::as_i64);
+            let mode = object.get("storage_mode").and_then(Value::as_str);
+            if count.is_some_and(|count| count <= 50_000)
+                && start.is_some()
+                && step.is_some()
+                && matches!(mode, Some("auto" | "artifact"))
+            {
+                reject_generate_sensitive_keys(
+                    object.get("data").expect("required data field was checked"),
+                )?;
+                Ok(())
+            } else {
+                Err(DraftError::Invalid("generate_items_configuration".into()))
+            }
+        }
+        _ => Err(DraftError::Invalid("node_configuration".into())),
     }
+}
+
+fn reject_generate_sensitive_keys(value: &Value) -> Result<(), DraftError> {
+    const SENSITIVE: &[&str] = &[
+        "authorization",
+        "cookie",
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "private_key",
+        "access_token",
+        "refresh_token",
+        "id_token",
+        "auth_token",
+        "bearer_token",
+        "session_token",
+        "client_secret",
+        "credential",
+        "credentials",
+        "secret_key",
+        "signing_key",
+        "ssh_key",
+        "secret_lease",
+        "lease_token",
+    ];
+    match value {
+        Value::Object(object) => {
+            for (key, nested) in object {
+                let normalized = key.to_ascii_lowercase().replace('-', "_");
+                let sensitive_suffix = [
+                    "_password",
+                    "_passwd",
+                    "_secret",
+                    "_token",
+                    "_credential",
+                    "_credentials",
+                    "_private_key",
+                    "_api_key",
+                ]
+                .iter()
+                .any(|suffix| normalized.ends_with(suffix));
+                if SENSITIVE.contains(&normalized.as_str()) || sensitive_suffix {
+                    return Err(DraftError::Invalid("generate_items_sensitive_field".into()));
+                }
+                reject_generate_sensitive_keys(nested)?;
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                reject_generate_sensitive_keys(item)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn connection_identity(value: &Value) -> Result<(String, String, String), DraftError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| DraftError::Invalid("connection".into()))?;
+    if object.len() != 3 {
+        return Err(DraftError::Invalid("connection".into()));
+    }
+    let id = object
+        .get("id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DraftError::Invalid("connection".into()))?;
+    let source = object
+        .get("source")
+        .and_then(Value::as_object)
+        .ok_or_else(|| DraftError::Invalid("connection".into()))?;
+    let target = object
+        .get("target")
+        .and_then(Value::as_object)
+        .ok_or_else(|| DraftError::Invalid("connection".into()))?;
+    if source.len() != 2 || target.len() != 2 {
+        return Err(DraftError::Invalid("connection".into()));
+    }
+    let source_id = source
+        .get("node_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DraftError::Invalid("connection".into()))?;
+    let target_id = target
+        .get("node_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DraftError::Invalid("connection".into()))?;
+    let source_port = source
+        .get("port_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DraftError::Invalid("connection".into()))?;
+    let target_port = target
+        .get("port_id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| DraftError::Invalid("connection".into()))?;
+    for identity in [id, source_id, target_id, source_port, target_port] {
+        identifier(identity)?;
+    }
+    Ok((id.into(), source_id.into(), target_id.into()))
 }
 fn now_ms() -> i64 {
     SystemTime::now()
