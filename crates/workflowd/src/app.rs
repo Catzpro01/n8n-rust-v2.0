@@ -9,6 +9,8 @@ use crate::{
     owner_http,
     publication::PublicationService,
     publication_http,
+    run::RunService,
+    run_http,
     security::{RecoveryHealth, SecurityService},
 };
 use axum::{
@@ -27,6 +29,7 @@ pub struct AppState {
     pub security: Arc<SecurityService>,
     pub drafts: Arc<DraftService>,
     pub publications: Arc<PublicationService>,
+    pub runs: Arc<RunService>,
 }
 #[derive(Serialize)]
 struct LiveResponse {
@@ -92,6 +95,11 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/workflows/{id}/revisions/{revision_id}",
             get(publication_http::revision),
         )
+        .route("/api/v1/workflows/{id}/runs", post(run_http::admit))
+        .route("/api/v1/runs/{run_id}", get(run_http::status))
+        .route("/api/v1/runs/{run_id}/cancel", post(run_http::cancel))
+        .route("/api/v1/runs/{run_id}/trace", get(run_http::trace))
+        .route("/api/v1/runs/{run_id}/events", get(run_http::events))
         .route(
             "/api/v1/workflows/{id}/editor-session",
             post(draft_http::editor_session),

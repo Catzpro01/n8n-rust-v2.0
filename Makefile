@@ -19,10 +19,11 @@ test: editor
 	cargo test --workspace --locked
 	cargo build --workspace --locked
 	cd editor && npx playwright install chromium && npm run test:browser
-	python3 -m unittest tests/acceptance/test_daemon_shell.py tests/acceptance/test_owner_recovery.py tests/acceptance/test_durable_draft.py tests/acceptance/test_editing_recovery.py tests/acceptance/test_publication_rollback.py
+	python3 -m unittest tests/acceptance/test_daemon_shell.py tests/acceptance/test_owner_recovery.py tests/acceptance/test_durable_draft.py tests/acceptance/test_editing_recovery.py tests/acceptance/test_publication_rollback.py tests/acceptance/test_run_manual_trigger.py
 
 release-test: release
 	python3 -m unittest tests/acceptance/test_release_bundle.py
+	WORKFLOWD_BIN=out/tracer-bundle/usr/bin/workflowd python3 -m unittest tests/acceptance/test_run_manual_trigger.py
 
 build: editor
 	cargo build --workspace --locked

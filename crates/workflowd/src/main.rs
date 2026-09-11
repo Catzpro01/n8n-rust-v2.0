@@ -14,6 +14,9 @@ mod identity;
 mod owner_http;
 mod publication;
 mod publication_http;
+mod run;
+mod run_engine;
+mod run_http;
 mod security;
 
 use crate::app::AppState;
@@ -79,6 +82,10 @@ fn serve() -> Result<(), AppError> {
         publication::PublicationService::initialize(&config, security.clone())
             .map_err(|error| AppError::Database(format!("publication schema: {error}")))?,
     );
+    let runs = Arc::new(
+        run::RunService::initialize(&config)
+            .map_err(|error| AppError::Database(format!("Run schema: {error}")))?,
+    );
     let state = AppState {
         _database_worker: Arc::new(database_worker),
         release: ReleaseIdentity::new(database_identity.runtime_version.clone()),
@@ -87,6 +94,7 @@ fn serve() -> Result<(), AppError> {
         security,
         drafts,
         publications,
+        runs,
     };
 
     let runtime = Builder::new_multi_thread()

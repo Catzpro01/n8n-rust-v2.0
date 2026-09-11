@@ -28,6 +28,7 @@ serde_jcs = "=0.2.0"
 sha2 = "=0.10.9"
 thiserror = "=2.0.16"
 tokio = { version = "=1.53.1", default-features = false, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-stream = { version = "=0.1.17", default-features = false }
 tracing = "=0.1.41"
 tracing-subscriber = { version = "=0.3.23", default-features = false, features = ["fmt", "json"] }
 
